@@ -1,0 +1,37 @@
+name: Real微读 tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lua-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LuaJIT and SQLite
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y luajit libsqlite3-0
+
+      - name: Fetch pinned test dependencies
+        working-directory: src/spec
+        run: sh setup_deps.sh
+
+      - name: Run pure logic and layout tests
+        working-directory: src/spec
+        run: |
+          luajit test_logic.lua
+          luajit test_layout.lua
+
+      - name: Run data and plugin smoke tests
+        working-directory: src/spec
+        run: |
+          luajit test_shelf_data.lua
+          luajit test_main_smoke.lua
+
+      - name: Parse all plugin Lua sources
+        run: |
+          luajit -e 'local p="src/wereadshelf.koplugin"; for f in io.popen("find "..p.." -name \\\"*.lua\\\""):lines() do local ok,e=loadfile(f); assert(ok,e) end'

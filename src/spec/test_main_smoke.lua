@@ -149,7 +149,9 @@ check("我 account name", mp.account_name == "小明")
 check("我 weekly stats fetched (weekly mode)", _G.stats_mode == "weekly" and S:readSetting("stats_cache").week_min == 61
     and S:readSetting("stats_cache").notes == 12)
 check("我 page refreshed after fetch", (mp.refreshed or 0) >= 1)
-check("我 rows: 5, last = 退出到 Kindle (bold)", #mp.rows == 5 and mp.rows[5].text == "退出到 Kindle" and mp.rows[5].bold)
+check("我 rows include safe KOReader return and direct Kindle exit", #mp.rows == 6
+    and mp.rows[5].text == "返回 KOReader"
+    and mp.rows[6].text == "退出到 Kindle" and mp.rows[6].bold)
 -- BUG-04: refresh returning nil / raising -> visible failure notice
 local old_client = fm.weread.client
 fm.weread.client = { get_read_stats = function() return nil end }

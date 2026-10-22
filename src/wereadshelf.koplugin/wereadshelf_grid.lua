@@ -33,6 +33,7 @@ local logger          = require("logger")
 local Screen          = Device.screen
 
 local Layout = require("wereadshelf_layout")
+local U      = require("wereadshelf_ui")
 
 local BLACK = Blitbuffer.COLOR_BLACK
 local WHITE = Blitbuffer.COLOR_WHITE
@@ -54,6 +55,9 @@ local ShelfGrid = InputContainer:extend{
     on_import = nil,                 -- function()
     on_select = nil,                 -- function()
     on_search = nil,                 -- function(grid) -> shows search dialog
+    on_discover = nil,
+    on_shelf = nil,
+    on_me = nil,
     keyword = nil,                   -- active local filter
     page = 1,
     page_num = 1,
@@ -73,7 +77,9 @@ function ShelfGrid:init()
         if ok_t and t then top = t end
     end
     self.content_top = top
-    self.avail_h = avail
+    self.own_nav = type(UI) ~= "table"
+    self.nav_h = self.own_nav and U.nav_height() or 0
+    self.avail_h = avail - self.nav_h
     self.L = Layout.compute{ screen_w = Screen:getWidth(), avail_h = avail }
     self.page_num = Layout.page_count(#self.shown, self.L.per_page)
     self.page = Layout.clamp_page(self.page, #self.shown, self.L.per_page)
@@ -225,10 +231,15 @@ function ShelfGrid:_buildBody()
     -- SimpleUI's wrapper already offsets the inner widget by the top inset
     -- (sui_core.lua:471), so the body starts at 0; content_top is only used
     -- to translate tap coordinates.
-    return VerticalGroup:new{ align = "left",
+    local body = VerticalGroup:new{ align = "left",
         self:_buildHeader(),
         self:_buildGrid(),
     }
+    if self.own_nav then
+        body[#body + 1] = U.bottom_nav("shelf", Screen:getWidth())
+        self.nav_top = self.content_top + self.avail_h
+    end
+    return body
 end
 
 -- self[1] is a stable white frame. SimpleUI takes it as _navbar_inner and
@@ -237,7 +248,7 @@ end
 function ShelfGrid:_build()
     self.frame = FrameContainer:new{
         bordersize = 0, padding = 0, margin = 0, background = WHITE,
-        width = Screen:getWidth(), height = self.avail_h,
+        width = Screen:getWidth(), height = self.avail_h + self.nav_h,
         self:_buildBody(),
     }
     self[1] = self.frame
@@ -297,6 +308,17 @@ end
 function ShelfGrid:onTap(_, ges)
     local pos = ges and ges.pos
     if not pos then return end
+    if self.own_nav and pos.y >= self.nav_top then
+        local third = Screen:getWidth() / 3
+        if pos.x < third then
+            if self.on_discover then self.on_discover() end
+        elseif pos.x < third * 2 then
+            if self.on_shelf then self.on_shelf() end
+        else
+            if self.on_me then self.on_me() end
+        end
+        return true
+    end
     if inside(self.hit_search, pos.x, pos.y) then
         if self.on_search then self.on_search(self) end
         return true

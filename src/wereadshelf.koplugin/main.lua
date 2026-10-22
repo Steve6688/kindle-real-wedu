@@ -355,6 +355,15 @@ function WeReadShelf.exitToKindle()
     UIManager:broadcastEvent(Event:new("Exit"))
 end
 
+function WeReadShelf.confirmExitToKindle()
+    local ConfirmBox = require("ui/widget/confirmbox")
+    UIManager:show(ConfirmBox:new{
+        text = "退出 KOReader，返回 Kindle 主界面？",
+        ok_text = "退出",
+        ok_callback = function() WeReadShelf.exitToKindle() end,
+    })
+end
+
 function WeReadShelf.showSettingsDialog()
     local ButtonDialog = require("ui/widget/buttondialog")
     local dlg
@@ -504,6 +513,9 @@ function WeReadShelf.showDiscover()
     add("刷新 / 管理书架", "openBookshelf")                 -- main.lua:33
     local page = Pages.Discover:new{
         books = books, entries = entries,
+        on_nav_discover = function() WeReadShelf.showDiscover() end,
+        on_nav_shelf = function() WeReadShelf.showGrid() end,
+        on_nav_me = function() WeReadShelf.showMe() end,
         on_search = function() call_weread("showSearch") end,
         on_open = function(b)
             local ok, e = Data.open_book(weread, b.bookId)
@@ -564,8 +576,12 @@ function WeReadShelf.showMe()
                     .. "或 weread 菜单「划线和想法管理」查看该书笔记。") end },
             { text = "书架同步", fn = function() call_weread("openBookshelf") end },        -- main.lua:33
             { text = "阅读设置", fn = function() WeReadShelf.showSettingsDialog() end },
-            { text = "退出到 Kindle", bold = true, fn = function() WeReadShelf.confirmBackToNative() end },
+            { text = "返回 KOReader", fn = function() close_pages() end },
+            { text = "退出到 Kindle", bold = true, fn = function() WeReadShelf.confirmExitToKindle() end },
         },
+        on_nav_discover = function() WeReadShelf.showDiscover() end,
+        on_nav_shelf = function() WeReadShelf.showGrid() end,
+        on_nav_me = function() WeReadShelf.showMe() end,
         on_refresh_stats = function()
             WeReadShelf.refreshStats(weread, function(good, err)
                 if page then page.stats = stats(); page:refresh() end
@@ -645,6 +661,9 @@ function WeReadShelf.showGrid()
             info("「选择」（批量管理）计划在二期提供。\n现在可点「导入」进入微信读书书架管理。")
         end,
         on_search = function(g) WeReadShelf.showSearchDialog(g) end,
+        on_discover = function() WeReadShelf.showDiscover() end,
+        on_shelf = function() WeReadShelf.showGrid() end,
+        on_me = function() WeReadShelf.showMe() end,
     }
     local orig_close = grid.onCloseWidget
     grid.onCloseWidget = function(self_w)

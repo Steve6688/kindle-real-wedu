@@ -14,6 +14,8 @@ local LeftContainer   = require("ui/widget/container/leftcontainer")
 local LineWidget      = require("ui/widget/linewidget")
 local TextBoxWidget   = require("ui/widget/textboxwidget")
 local TextWidget      = require("ui/widget/textwidget")
+local VerticalGroup   = require("ui/widget/verticalgroup")
+local VerticalSpan    = require("ui/widget/verticalspan")
 local Screen          = Device.screen
 
 local U = {}
@@ -54,6 +56,39 @@ function U.vline(h, w)
 end
 
 function U.hspan(w) return HorizontalSpan:new{ width = w } end
+
+-- Standalone Real微读 bottom navigation. SimpleUI used to provide this bar;
+-- keep it inside the plugin so the primary navigation never disappears.
+function U.nav_height() return math.max(U.px(128), 112) end
+
+function U.bottom_nav(active, width)
+    width = width or Screen:getWidth()
+    local h = U.nav_height()
+    local tabs = {
+        { id = "discover", label = "发现", icon = "tab_discover" },
+        { id = "shelf", label = "书架", icon = "tab_shelf" },
+        { id = "me", label = "我", icon = "tab_me" },
+    }
+    local cells = HorizontalGroup:new{ align = "top" }
+    local base = math.floor(width / #tabs)
+    for i, tab in ipairs(tabs) do
+        local w = i == #tabs and (width - base * (i - 1)) or base
+        local selected = tab.id == active
+        local icon_name = tab.icon .. (selected and "_active" or "")
+        local icon_size = U.px(48)
+        local content = VerticalGroup:new{ align = "center",
+            VerticalSpan:new{ width = U.px(14) },
+            U.icon(icon_name, icon_size),
+            VerticalSpan:new{ width = U.px(5) },
+            U.text(tab.label, U.px(25), selected),
+        }
+        cells[#cells + 1] = CenterContainer:new{ dimen = Geom:new{ w = w, h = h - 2 }, content }
+    end
+    return FrameContainer:new{
+        bordersize = 1, padding = 0, margin = 0, color = U.BLACK, background = U.WHITE,
+        width = width, height = h, cells,
+    }
+end
 
 -- Pill search box (UI-SPEC 书架页搜索框).
 function U.search_capsule(w, h, placeholder, font_px)

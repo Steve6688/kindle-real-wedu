@@ -7,9 +7,9 @@
 |---|---|---|
 | KOReader | v2026.07.x（kindlepw2 包） | 设备上已装 |
 | weread.koplugin（微信读书登录/书架/下载/进度同步） | 1.6.0 | `vendor/weread.koplugin` |
-| **wereadshelf.koplugin（本项目，自研）** | **0.3.5** | `src/wereadshelf.koplugin` |
+| **wereadshelf.koplugin（本项目，自研）** | **0.3.6** | `src/wereadshelf.koplugin` |
 
-Real微读提供：4 列封面网格书架、发现与我的页面，以及微信读书风格阅读菜单和字体面板。只读 weread 缓存，不修改 weread、KOReader 或 Kindle 系统；无需安装 SimpleUI。
+Real微读提供：自带「发现 / 书架 / 我」底部导航、4 列封面网格书架，以及微信读书风格阅读菜单和字体面板。只读 weread 缓存，不修改 weread、KOReader 或 Kindle 系统；无需安装 SimpleUI。
 
 ## 安装
 1. 退出 KOReader，USB 连接 Kindle，先备份 `koreader/settings/`。

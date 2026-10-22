@@ -23,11 +23,14 @@ local Page = InputContainer:extend{ covers_fullscreen = true }
 function Page:init()
     self.W = Screen:getWidth()
     self.top, self.avail = U.content_area()
+    self.own_nav = type(package.loaded["infra/sui_core"]) ~= "table"
+    self.nav_h = self.own_nav and U.nav_height() or 0
+    self.avail = self.avail - self.nav_h
     self.dimen = rect(0, 0, self.W, Screen:getHeight())
     self.ges_events = { Tap = { GestureRange:new{ ges = "tap", range = function() return self.dimen end } } }
     if Device:hasKeys() then self.key_events = { Close = { { "Back" } } } end
     self.frame = FrameContainer:new{ bordersize = 0, padding = 0, margin = 0, background = U.WHITE,
-        width = self.W, height = self.avail, U.hspan(0) }
+        width = self.W, height = self.avail + self.nav_h, U.hspan(0) }
     self[1] = self.frame
     self:refresh(true)
 end
@@ -35,8 +38,20 @@ end
 function Page:refresh(no_dirty)
     if self.frame[1] and self.frame[1].free then self.frame[1]:free() end
     self.hits = {}
-    local g = OverlapGroup:new{ dimen = Geom:new{ w = self.W, h = self.avail } }
+    local g = OverlapGroup:new{ dimen = Geom:new{ w = self.W, h = self.avail + self.nav_h } }
     self:build(g)
+    if self.own_nav then
+        place(g, U.bottom_nav(self.nav_active, self.W), 0, self.avail)
+        self:hit(rect(0, self.avail, self.W / 3, self.nav_h), function()
+            if self.on_nav_discover then self.on_nav_discover() end
+        end)
+        self:hit(rect(self.W / 3, self.avail, self.W / 3, self.nav_h), function()
+            if self.on_nav_shelf then self.on_nav_shelf() end
+        end)
+        self:hit(rect(self.W * 2 / 3, self.avail, self.W / 3, self.nav_h), function()
+            if self.on_nav_me then self.on_nav_me() end
+        end)
+    end
     self.frame[1] = g
     if not no_dirty then UIManager:setDirty(self, "ui") end
 end
@@ -113,6 +128,7 @@ end
 -------------------------------------------------------------------------------
 local Discover = Page:extend{
     name = "wereadshelf_discover",
+    nav_active = "discover",
     books = nil,          -- Data.get_shelf() list (may be empty)
     on_search = nil, on_open = nil, on_all = nil,
     entries = nil,        -- { {text=, fn=}, ... } weread entries that exist
@@ -164,6 +180,7 @@ end
 -------------------------------------------------------------------------------
 local Me = Page:extend{
     name = "wereadshelf_me",
+    nav_active = "me",
     account_name = nil,
     stats = nil,          -- { week_min=, finished=, notes=, note_text= }
     rows = nil,           -- { {text=, fn=, bold=}, ... }

@@ -1,4 +1,4 @@
-# Real微读 (realweidu.koplugin) v0.4.4
+# Real微读 (realweidu.koplugin) v0.4.3
 
 KOReader 插件：在 Kindle（PW5, 1236×1648）上复刻微信读书墨水屏风格——0.3.3 风格界面（顶部时间/电量，底栏 ‹ 发现 书架 我 ›）、4 列封面书架、发现页、我的页、微信读书风格阅读菜单与字体面板。只读 weread.koplugin 的本地缓存，不改 weread 文件。
 
@@ -7,7 +7,7 @@ KOReader 插件：在 Kindle（PW5, 1236×1648）上复刻微信读书墨水屏�
 ## 安装
 把 `src/realweidu.koplugin/` 整个文件夹拷到 Kindle 的 `koreader/plugins/`，详见 [src/INSTALL.md](src/INSTALL.md)。
 
-## 怎么用（v0.4.4）
+## 怎么用（v0.4.3）
 - **装好即开启**：拷进 `koreader/plugins/` 后启动 KOReader，直接进入 Real微读书架。没有开关，不用设置。
 - **每次启动、每次合上书** 都回到 Real微读。
 - **返回 KOReader**：「我」→ 返回 KOReader（只这一次；下次启动仍进 Real微读）。
@@ -32,7 +32,6 @@ cd src && sh spec/setup_deps.sh && for t in test_shelf_data test_logic test_layo
 ```
 
 ## Changelog
-- **0.4.4** 阅读菜单去掉「听」/TTS 浮钮与相关接线；保留 AI 浮钮与其余 0.4.3 布局。
 - **0.4.3** 阅读菜单按微信读书官方样式重做（浅色墨水屏）：顶部灰色章节名；面板上方圆形「AI」「听」浮钮（无 TTS/词典时禁用或提示）；圆角浅灰底栏含三列进度/时长/笔记、‹ › 章节滑条、「阅读明细」「自动翻页」胶囊钮、底栏 ☰目录 / 罗盘(书签) / 中心圆点(进度跳转) / ☀亮度 / A字体。目录改为半屏底栏，点空白页即关。进度冲突对话框改为三选：使用微信读书进度 / 使用本地进度 / 取消（沿用 rweread ProgressSync）。阅读菜单「更多」可「下载并匹配划线/想法」（调用 weread 已有统一划线同步）。点按一律局部刷新。
 - **0.4.2** 真机反馈修复：「退出到 Kindle」恢复正常字重，并真正退出 KOReader（原因：KOReader 只在窗口栈为空时退出，Real微读的全屏页面留在已关闭的文件管理器上方，KOReader 就一直不退出；现在先关闭自己的页面再广播 Exit，最后 quit）。「阅读设置」去掉「KOReader 设置」一行。修正合并后残留的旧模块名（`weread.lib.crypto` → `rweread.lib.crypto`，影响封面兜底），内置 weread 补上版本信息；测试会扫描整个插件里残留的 `weread.*` / `wereadshelf_*` 模块名。提速：切换页面时先显示新页再关旧页（不再先重绘下面的文件管理器），换 Tab 改为局部刷新（只有第一次进入全屏刷新），「我」页的本周阅读联网刷新推迟 2 s，避免刚打开页面时卡住点击。
 - **0.4.1** 插件改名 **realweidu.koplugin**（文件夹、插件名、模块 `realweidu_*`）。首次启动自动迁移：`settings/wereadshelf*.lua` → `realweidu*.lua`、G_reader_settings 的 `wereadshelf_*` 键、手势/配置里的动作 `wereadshelf_open` → `realweidu_open`（旧动作 id 仍可用）。微信读书登录与数据（settings/weread.lua、weread/）不动。若旧的 wereadshelf.koplugin 文件夹还在：本次启动直接忽略，并在 KOReader 中禁用，不会重复。

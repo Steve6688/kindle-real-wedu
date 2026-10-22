@@ -142,12 +142,13 @@ function RM:_topBar(g)
     place(g, t, m.margin, U.px(28))
 end
 
--- Floating round AI button above the panel (0.4.4: no 听/TTS).
+-- Floating round AI / 听 buttons, just above the panel.
 function RM:_floatButtons(g, panel_y)
     local m, W = self.m, self.W
-    local d = m.float_d
+    local d, gap = m.float_d, m.float_gap
     local y = panel_y - d - U.px(20)
-    local x_ai = W - m.margin - d
+    local x_ai = W - m.margin - 2 * d - gap
+    local x_tts = W - m.margin - d
     local function float(label, x, enabled, fn)
         local txt = U.text(label, U.px(32), true)
         txt.fgcolor = U.WHITE
@@ -159,8 +160,15 @@ function RM:_floatButtons(g, panel_y)
         self:_hit(rect(x, y, d, d), fn)
     end
     float("AI", x_ai, self:_hasAI(), function() self:openAI() end)
+    float("听", x_tts, self:_hasTTS(), function() self:openTTS() end)
 end
 
+function RM:_hasTTS()
+    if Device and Device.canTTS and Device:canTTS() then return true end
+    local ui = self.ui
+    if ui and (ui.tts or ui.texttospeech) then return true end
+    return false
+end
 function RM:_hasAI()
     -- No built-in AI; dictionary is the closest substitute when available.
     return self.ui and self.ui.dictionary ~= nil
@@ -173,6 +181,18 @@ function RM:openAI()
     else
         UIManager:show(require("ui/widget/infomessage"):new{ text = "本机没有 AI 功能；可在 KOReader 安装词典作替代。", timeout = 2 })
     end
+end
+function RM:openTTS()
+    if Device and Device.canTTS and Device:canTTS() then
+        self:close()
+        send_event(self.ui, "SpeakCurrentPage")
+        return
+    end
+    -- Try Text-to-Speech plugin / ReaderTTS if present
+    if self.ui and self.ui.tts and type(self.ui.tts.onTTSStart) == "function" then
+        self:close(); pcall(self.ui.tts.onTTSStart, self.ui.tts); return
+    end
+    UIManager:show(require("ui/widget/infomessage"):new{ text = "本机没有朗读/TTS。", timeout = 2 })
 end
 
 -- Bottom official panel (rounded light gray).

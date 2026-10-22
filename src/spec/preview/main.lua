@@ -116,6 +116,14 @@ function H:init()
         return
     end
     _G.__wsprev_done = true
+    do -- 0.4.0 log: who provides ui.weread, how many ☰ entries, old plugin disabled?
+        local w = self.ui.weread
+        local n = 0
+        for _, m in ipairs(self.ui.menu and self.ui.menu.registered_widgets or {}) do if m.name and m.name:match("weread$") then n = n + 1 end end
+        local dis = G_reader_settings:readSetting("plugins_disabled") or {}
+        io.stderr:write(string.format("WSPREV040 embedded=%s path=%s weread_menus=%d old_disabled=%s\n",
+            tostring(w and w._real_embedded), tostring(w and w.path), n, tostring(dis.weread)))
+    end
     self.ui.weread = fake_weread()
     if MODE == "startup" then -- no action: Real微读 must open by itself
         UIManager:scheduleIn(5, shot); return
@@ -148,7 +156,7 @@ function H:init()
         elseif MODE == "download" then
             -- weread 1.6.0's own progress dialog, as fast download drives it
             package.path = os.getenv("WSPREV_WEREAD") .. "/?.lua;" .. package.path
-            local DD = require("weread.ui.download_dialog")
+            local DD = require("rweread.ui.download_dialog")
             local F = require("wereadshelf_fastdl")
             P.showGrid()
             UIManager:scheduleIn(1, function()

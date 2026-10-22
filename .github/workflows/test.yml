@@ -41,3 +41,8 @@ jobs:
         run: |
           test ! -e vendor/simpleui.koplugin
           ! grep -rnE 'require\(?\s*"(features|infra|screens)/sui_' src/wereadshelf.koplugin
+
+      - name: Embedded weread uses only rweread.* modules (0.4.0)
+        run: |
+          ! grep -rnE 'require\("(weread\.(lib|ui)|integrations)\.' src/wereadshelf.koplugin/rweread
+          test -f src/wereadshelf.koplugin/rweread/LICENSE && test -f src/wereadshelf.koplugin/rweread/NOTICE

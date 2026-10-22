@@ -14,7 +14,7 @@ package.loaded["ui/widget/infomessage"] = cls()
 package.loaded["ui/widget/confirmbox"] = cls()
 package.loaded["ui/widget/menu"] = cls()
 package.loaded["ui/widget/inputdialog"] = cls()
-package.loaded["logger"] = { warn = print }
+package.loaded["logger"] = { warn = print, info = function() end, dbg = function() end }
 -- grid widget stub (real widget needs KOReader; covered by the box emulator run)
 local Grid = cls()
 function Grid:setKeyword(k) self.keyword = k end
@@ -38,6 +38,10 @@ local function mem_settings() local d = {}
         flush = function() end, _d = d } end
 package.loaded["ui/elements/filemanager_menu_order"] = { main = { "history", "exit_menu" } }
 
+-- embedded weread stub (the real module needs KOReader; covered by the emulator run)
+local WR = cls()
+function WR:getMainMenuItems() return { { text = "扫码登录" }, { text = "书架" }, { text = "公众号" } } end
+package.loaded["rweread.plugin"] = WR
 local P = dofile(here .. "/../wereadshelf.koplugin/main.lua")
 local S = mem_settings(); P._settings_override = S
 local menu_items = {}
@@ -46,7 +50,7 @@ inst:init(); for _, f in ipairs(ticks) do f() end
 local fails, n = 0, 0
 local function check(name, c) n = n + 1; print((c and "ok   " or "FAIL ") .. name); if not c then fails = fails + 1 end end
 check("main menu has four focused actions", menu_items.wereadshelf ~= nil
-    and #menu_items.wereadshelf.sub_item_table == 4
+    and #menu_items.wereadshelf.sub_item_table == 5
     and menu_items.wereadshelf.sub_item_table[4].text == "阅读设置…"
     and menu_items.wereadshelf.sub_item_table[1].text == "打开 Real微读"
     and menu_items.wereadshelf.sub_item_table[2].text == "登录与同步书架")
@@ -237,6 +241,30 @@ _G.G_reader_settings = { readSetting = function(_, k) if k == "full_refresh_coun
 P.toggleSetting("smooth_turns"); P.toggleSetting("smooth_turns")
 check("流畅翻页 keeps a user-chosen refresh rate", UIM.FULL_REFRESH_COUNT ~= 12 or UIM._wrs_orig_rate == nil)
 _G.G_reader_settings = nil
+-- 0.4.0: one plugin — embedded weread attached, a separate weread.koplugin detached + disabled
+do
+    local foreign = { name = "weread" }
+    local reg = { foreign, "other" }
+    local saved = {}
+    _G.G_reader_settings = { readSetting = function(_, k) return saved[k] end, saveSetting = function(_, k, v) saved[k] = v end,
+        flush = function() end, isTrue = function() return false end }
+    local ui2 = { foreign, weread = foreign, menu = { registered_widgets = reg }, active_widgets = {} }
+    ui2.registerModule = function(self_u, name, m) self_u[name] = m; table.insert(self_u, m) end
+    local inst2 = P.attachWeread(ui2)
+    check("embedded weread attached as ui.weread", inst2 and ui2.weread == inst2 and inst2._real_embedded and inst2.real_shelf_redirect)
+    check("separate weread.koplugin removed from events + menu", ui2[1] ~= foreign and reg[1] == "other" and #reg == 1)
+    check("separate weread.koplugin disabled for next start", saved.plugins_disabled and saved.plugins_disabled.weread == true)
+    check("attach is idempotent", P.attachWeread(ui2) == inst2)
+    local mi = {}
+    local pi = P:new{ ui = { weread = inst2 } }
+    pi:addToMainMenu(mi)
+    local sub = mi.wereadshelf.sub_item_table[5]
+    check("☰ single Real微读 entry with weread functions folded in", mi.weread == nil and sub.text == "微信读书功能"
+        and #sub.sub_item_table_func() == 3)
+    ticks = {}; inst2.real_shelf_redirect(); local nb = #shown; for _, f in ipairs(ticks) do f() end
+    check("embedded 书架 redirect -> Real微读 grid", #shown > nb)
+    _G.G_reader_settings = nil
+end
 P.exitToKindle(); check("exit to Kindle = KOReader Exit event", broadcast[#broadcast] and broadcast[#broadcast].name == "Exit")
 -- reader hook
 local zones

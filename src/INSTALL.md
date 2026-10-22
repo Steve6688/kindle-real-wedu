@@ -1,7 +1,7 @@
-# Real微读（wereadshelf.koplugin）安装说明 — v0.3.8
+# Real微读（wereadshelf.koplugin）安装说明 — v0.4.0
 
-适用：KOReader v2026.07.1 + weread.koplugin 1.6.0（Kindle PW5）。**不需要 SimpleUI。**
-本插件**只读** weread 的本地缓存，不修改 weread 或 KOReader 文件，只新增/更新插件目录和设置文件 `settings/wereadshelf.lua`。
+适用：KOReader v2026.07.1（Kindle PW5）。**0.4.0 已内置 weread.koplugin 1.6.0（AGPL-3.0），只需装这一个插件。****不需要 SimpleUI。**
+内置的微信读书沿用原设置 `settings/weread.lua` 与数据目录 `weread/`：**登录、Cookie、缓存、已下载的书和设置全部保留，不用重新登录。** 本插件自己的设置在 `settings/wereadshelf.lua`。
 
 ## 0. 先备份（必做）
 USB 连接 Kindle，把整个 `koreader/settings/` 复制到电脑，例如 `settings.bak-20261021/`。
@@ -9,17 +9,18 @@ USB 连接 Kindle，把整个 `koreader/settings/` 复制到电脑，例如 `set
 
 ## 1. 全新安装 / 从 v0.1、v0.2 升级
 1. 完全退出 KOReader（菜单 → 退出），USB 连电脑。
-2. 删除旧的 `koreader/plugins/wereadshelf.koplugin/`（升级时），再把本仓库 `src/wereadshelf.koplugin/` **整个文件夹**拷过去：
+2. **删除 `koreader/plugins/weread.koplugin/`**（已内置；若忘了删，Real微读会自动停用它，不会出现两个菜单），再删除旧的 `koreader/plugins/wereadshelf.koplugin/`（升级时），再把本仓库 `src/wereadshelf.koplugin/` **整个文件夹**拷过去：
 ```
 koreader/plugins/wereadshelf.koplugin/
     _meta.lua  main.lua  wereadshelf_data.lua  wereadshelf_layout.lua  wereadshelf_grid.lua
     wereadshelf_logic.lua  wereadshelf_ui.lua  wereadshelf_pages.lua  wereadshelf_readermenu.lua  wereadshelf_fastdl.lua
+    rweread/  (内置 weread.koplugin 1.6.0：lib/ ui/ integrations/ icons/ fonts/ LICENSE NOTICE)
     icons/  (21 个 svg：tab_*、rm_*、bookmark*、more、back_chevron、chevron_right、refresh、search、import、select、wereadshelf)
 ```
 （`src/spec/` 是电脑上的测试和预览工具，**不要拷**。）
 3. **从 0.3.6 或更早升级：删除 `koreader/plugins/simpleui.koplugin/`**（0.3.7 起不再使用 SimpleUI；残留也不会出错，但会多一套无用菜单）。如需清理，可一并删除 `koreader/settings/simpleui/`。
 4. 安全弹出 → KUAL 启动 KOReader → 插件管理确认「Real微读」已勾选，版本 0.3.8。
-5. 确保 weread 里打开过一次书架（联网），让它缓存书架和封面——本插件只显示这份缓存。
+5. 首次使用需在 ☰ Real微读 → 微信读书功能 里扫码登录（已登录过的保持登录）；确保打开过一次书架（联网），让它缓存书架和封面——本插件只显示这份缓存。
 
 启动 KOReader 后**直接进入 Real微读**（装好即开启，无需任何设置）。第一次使用在书架点「导入」或 我 → 书架同步。
 

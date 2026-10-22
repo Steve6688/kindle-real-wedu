@@ -289,13 +289,15 @@ end
 
 -- Install into weread 1.6.0. Returns true when patched.
 function M.install()
-    local D = package.loaded["weread.lib.downloader"]
-    local Content = package.loaded["weread.lib.content"]
+    -- 0.4.0: applied to the embedded copy (rweread.*); weread.* kept for tests
+    local L = package.loaded
+    local D = L["rweread.lib.downloader"] or L["weread.lib.downloader"]
+    local Content = L["rweread.lib.content"] or L["weread.lib.content"]
     if type(D) ~= "table" or type(Content) ~= "table" or D._wrs_fast then return false end
     if type(D._step) ~= "function" or type(D._runInterruptible) ~= "function"
         or type(Content.fetch_single_chapter_source) ~= "function" then return false end
     local UIManager = require("ui/uimanager")
-    local WorkerSettings = package.loaded["weread.lib.worker_settings"]
+    local WorkerSettings = L["rweread.lib.worker_settings"] or L["weread.lib.worker_settings"]
     D._wrs_fast = true
     Content._wrs_orig_fetch = Content.fetch_single_chapter_source
     Content.fetch_single_chapter_source = function(client, settings, book, chapter, state)

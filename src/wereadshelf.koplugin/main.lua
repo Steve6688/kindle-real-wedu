@@ -20,6 +20,17 @@ local logger          = require("logger")
 -- Must be required at top level: KOReader only puts the plugin dir on
 -- package.path while dofile()'ing main.lua (frontend/pluginloader.lua:242-244).
 local Data   = require("wereadshelf_data")
+-- 0.4.0: weread.koplugin 1.6.0 is embedded (rweread/, AGPL-3.0, finlater and
+-- contributors). Its modules are required lazily at runtime too, so keep this
+-- plugin's folder on package.path after loading.
+do
+    local src = (debug.getinfo(1, "S").source or ""):match("^@(.*)/[^/]+$")
+    if src and not package.path:find(src .. "/?.lua", 1, true) then
+        package.path = src .. "/?.lua;" .. package.path
+    end
+end
+local okw, WeReadPlugin = pcall(require, "rweread.plugin")
+if not okw then logger.warn("wereadshelf: embedded weread failed to load:", WeReadPlugin); WeReadPlugin = nil end
 local FastDL = require("wereadshelf_fastdl")
 local Layout = require("wereadshelf_layout")
 local ShelfGrid -- lazy (pulls in UI widgets)
@@ -57,7 +68,7 @@ local function S() return WeReadShelf._settings_override or settings() end
 local function on(key) return S():readSetting(key) ~= false end
 WeReadShelf.isOn = on
 WeReadShelf.ENTER_TEXT = "进入 Real微读"
-WeReadShelf.VERSION = "0.3.8"
+WeReadShelf.VERSION = "0.4.0"
 
 -- Put 「进入 Real微读」 at the top of KOReader's ☰ (main) menu tab instead of
 -- after Exit (items missing from the order table are appended at the end).
@@ -72,11 +83,62 @@ local function pin_menu_entry()
     end
 end
 
+-- 0.4.0: one plugin. Start the embedded weread on this ui (file manager or
+-- reader) under the same name ("weread"), settings file (settings/weread.lua)
+-- and data dir (<data>/weread), so login, cookies, cache and downloaded books
+-- carry over untouched. A separately installed weread.koplugin (loaded before
+-- us) is detached for this session and disabled for the next start.
+WeReadShelf._plugin_class = nil -- tests
+local function detach_foreign(ui, old)
+    for i = #ui, 1, -1 do if ui[i] == old then table.remove(ui, i) end end
+    if type(ui.active_widgets) == "table" then
+        for i = #ui.active_widgets, 1, -1 do if ui.active_widgets[i] == old then table.remove(ui.active_widgets, i) end end
+    end
+    local reg = ui.menu and ui.menu.registered_widgets
+    if type(reg) == "table" then
+        for i = #reg, 1, -1 do if reg[i] == old then table.remove(reg, i) end end
+    end
+    pcall(function() if old.prefetch_worker and old.prefetch_worker.cancel then old.prefetch_worker:cancel() end end)
+    local G = rawget(_G, "G_reader_settings")
+    if G then
+        local dis = G:readSetting("plugins_disabled") or {}
+        if not dis.weread then
+            dis.weread = true
+            G:saveSetting("plugins_disabled", dis)
+            if G.flush then G:flush() end
+        end
+    end
+    WeReadShelf._detached_foreign = true
+    logger.info("wereadshelf: separate weread.koplugin detached and disabled (now built into Real微读)")
+end
+
+function WeReadShelf.attachWeread(ui)
+    if type(ui) ~= "table" then return nil end
+    local old = ui.weread
+    if old and old._real_embedded then return old end
+    if old then detach_foreign(ui, old) end
+    local cls = WeReadShelf._plugin_class or WeReadPlugin
+    if not cls then ui.weread = nil; return nil end
+    local ok, inst = pcall(cls.new, cls, { ui = ui, dialog = ui.dialog, view = ui.view, document = ui.document,
+        path = (plugin_dir or ".") .. "/rweread", _real_embedded = true })
+    if not ok or type(inst) ~= "table" then
+        logger.warn("wereadshelf: embedded weread init failed:", inst)
+        ui.weread = nil
+        return nil
+    end
+    inst._real_embedded = true
+    inst.real_shelf_redirect = function() return WeReadShelf.toRealShelf() end
+    inst._wrs_redirect = true
+    if type(ui.registerModule) == "function" then ui:registerModule("weread", inst) else ui.weread = inst end
+    return inst
+end
+
 local current_grid, current_page, active_tab
 local close_pages, ui_icons, call_weread -- defined further below
 
 function WeReadShelf:init()
     plugin_dir = self.path or plugin_dir
+    WeReadShelf.attachWeread(self.ui)
     pin_menu_entry()
     if self.ui and self.ui.menu then
         self.ui.menu:registerToMainMenu(self)
@@ -197,7 +259,18 @@ function WeReadShelf:addToMainMenu(menu_items)
                 checked_func = function() return on("reader_menu") end,
                 callback = function() WeReadShelf.toggleSetting("reader_menu") end,
             },
-            { text = "阅读设置…", callback = function() WeReadShelf.showSettingsDialog() end },
+            { text = "阅读设置…", callback = function() WeReadShelf.showSettingsDialog() end,
+              separator = true },
+            -- 0.4.0: weread's own menu (login, shelf, search, public accounts,
+            -- cache, reading report, settings ...) folded in here
+            { text = "微信读书功能", sub_item_table_func = function()
+                local w = self.ui and self.ui.weread
+                if w and type(w.getMainMenuItems) == "function" then
+                    local ok, items = pcall(w.getMainMenuItems, w)
+                    if ok and type(items) == "table" then return items end
+                end
+                return { { text = "微信读书模块未加载", enabled = false } }
+            end },
         },
     }
 end

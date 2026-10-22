@@ -1,4 +1,4 @@
-local ConfirmBox = require("ui/widget/confirmbox")
+local ButtonDialog = require("ui/widget/buttondialog")
 local InfoMessage = require("ui/widget/infomessage")
 local UIManager = require("ui/uimanager")
 local T = require("ffi/util").template
@@ -15,6 +15,7 @@ local function percent(position)
     return string.format("%.0f", tonumber(position and position.percent) or 0)
 end
 
+-- 0.4.3: three choices — WeRead / local / cancel (ConfirmBox only had two).
 function ProgressSyncDialog.show_choice(context)
     local message
     if context.source_conflict then
@@ -33,14 +34,19 @@ function ProgressSyncDialog.show_choice(context)
             percent(context.remote_position))
     end
 
-    UIManager:show(ConfirmBox:new{
-        title = _("Reading progress sync"),
-        text = message,
-        ok_text = _("Use WeRead progress"),
-        cancel_text = _("Keep KOReader progress"),
-        ok_callback = context.use_remote,
-        cancel_callback = context.keep_local,
-    })
+    local dlg
+    dlg = ButtonDialog:new{
+        title = message,
+        buttons = {
+            {{ text = _("Use WeRead progress"),
+               callback = function() UIManager:close(dlg); if context.use_remote then context.use_remote() end end }},
+            {{ text = _("Use local progress"),
+               callback = function() UIManager:close(dlg); if context.keep_local then context.keep_local() end end }},
+            {{ text = _("Cancel"),
+               callback = function() UIManager:close(dlg) end }},
+        },
+    }
+    UIManager:show(dlg)
 end
 
 function ProgressSyncDialog.notify(code, data)

@@ -272,6 +272,50 @@ function H:init()
         elseif MODE == "settings" then
             P.showMe(); UIManager:scheduleIn(1, function() P.showSettingsDialog() end)
             UIManager:scheduleIn(4, shot); return
+        elseif MODE == "fontpanel" then
+            require("apps/reader/readerui"):showReader("/tmp/korprev/sample.epub")
+            UIManager:scheduleIn(4, function()
+                local ui = require("apps/reader/readerui").instance
+                local RM = require("realweidu_readermenu")
+                local menu = RM:new{ ui = ui, weread = ui and ui.weread, on_back = function() end }
+                menu.font_open = true; menu:_build()
+                UIManager:show(menu, "ui")
+                UIManager:scheduleIn(2, shot)
+            end)
+            return
+        elseif MODE == "brightness" then
+            require("apps/reader/readerui"):showReader("/tmp/korprev/sample.epub")
+            UIManager:scheduleIn(4, function()
+                local ui = require("apps/reader/readerui").instance
+                local RM = require("realweidu_readermenu")
+                local menu = RM:new{ ui = ui, weread = ui and ui.weread, on_back = function() end }
+                menu.sheet_open = true; menu:_build()
+                UIManager:show(menu, "ui")
+                UIManager:scheduleIn(2, shot)
+            end)
+            return
+        elseif MODE == "readingmenu" or MODE == "tocsheet" then
+            -- open sample book then show our reading menu / TOC sheet
+            require("apps/reader/readerui"):showReader("/tmp/korprev/sample.epub")
+            UIManager:scheduleIn(4, function()
+                local RUI = require("apps/reader/readerui")
+                local ui = RUI.instance
+                local P2 = ui and ui.realweidu
+                if not P2 then io.stderr:write("WSPREV no realweidu on reader\n"); shot(); return end
+                -- ensure reader menu setting on
+                pcall(function()
+                    local S = require("luasettings"):open(require("datastorage"):getSettingsDir().."/realweidu.lua")
+                    S:saveSetting("reader_menu", true); S:flush()
+                end)
+                local RM = require("realweidu_readermenu")
+                local menu = RM:new{ ui = ui, weread = ui.weread,
+                    on_back = function() end }
+                if MODE == "tocsheet" then menu.toc_open = true; menu:_build() end
+                UIManager:show(menu, "ui")
+                io.stderr:write("WSPREV readingmenu toc="..tostring(menu.toc_open).."\n")
+                UIManager:scheduleIn(2, shot)
+            end)
+            return
         elseif MODE == "discover" then P.showDiscover()
         elseif MODE == "me" then P.showMe()
         else

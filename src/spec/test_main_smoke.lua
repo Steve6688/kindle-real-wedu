@@ -327,6 +327,24 @@ do
     end
     check("no stale weread.* / wereadshelf_* module names (" .. table.concat(stale, ",") .. ")", #stale == 0)
 end
+-- 0.4.3 reading menu + progress sync dialog (source-level; full UI needs KOReader)
+do
+    local src = assert(io.open(here .. "/../realweidu.koplugin/realweidu_readermenu.lua")):read("*a")
+    check("reading menu has official panel pieces", src:find("阅读明细", 1, true) and src:find("开启自动翻页", 1, true)
+        and src:find("showTocSheet", 1, true) and src:find('kind == "dot"', 1, true)
+        and src:find('float("AI"', 1, true) and src:find("syncThoughts", 1, true)
+        and src:find('rm_font_active', 1, true) and src:find("_fontIconBar", 1, true)
+        and src:find('self:refresh("full")', 1, true))
+    check("TOC is half-screen sheet dismissable outside", src:find("sheet_h = math.floor(H * 0.55)", 1, true)
+        and src:find("tap outside dismisses TOC", 1, true))
+    local ps = assert(io.open(here .. "/../realweidu.koplugin/rweread/ui/progress_sync_dialog.lua")):read("*a")
+    check("progress sync dialog has 3 choices", ps:find("Use WeRead progress", 1, true)
+        and ps:find("Use local progress", 1, true) and ps:find('"Cancel"', 1, true)
+        and ps:find("ButtonDialog", 1, true))
+    local i18n = assert(io.open(here .. "/../realweidu.koplugin/rweread/lib/i18n.lua")):read("*a")
+    check("progress sync Chinese labels", i18n:find("使用微信读书进度", 1, true)
+        and i18n:find("使用本地进度", 1, true) and i18n:find('["Cancel"] = "取消"', 1, true))
+end
 P.exitToKindle(); check("exit to Kindle = KOReader Exit event", broadcast[#broadcast] and broadcast[#broadcast].name == "Exit")
 -- reader hook
 local zones

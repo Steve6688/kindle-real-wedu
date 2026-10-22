@@ -1,5 +1,5 @@
--- realweidu_readermenu.lua — WeRead-style reading menu (top bar + 5-icon
--- bottom bar) and the 字体设置 panel, shown over KOReader's ReaderUI.
+-- realweidu_readermenu.lua — official WeRead reading menu (0.4.3), e-ink light
+-- theme, plus the 字体设置 panel, shown over KOReader's ReaderUI.
 -- Everything it does goes through ReaderUI's own events/modules:
 --   ToggleBookmark            apps/reader/modules/readerbookmark.lua:370, isPageBookmarked :423
 --   ShowToc                   apps/reader/modules/readertoc.lua:806, getTocTitleOfCurrentPage :475
@@ -38,7 +38,11 @@ local RM = InputContainer:extend{
     sheet_open = false,    -- v0.3.6 阅读设置 bottom sheet (字号 / 亮度·暖光 / 翻页方式)
 }
 local Blitbuffer = require("ffi/blitbuffer")
-local LABEL_GRAY = Blitbuffer.Color8(0x8C) -- UI-LAYOUT: one gray for labels
+local LABEL_GRAY = Blitbuffer.Color8(0x8C)
+local PANEL_BG   = Blitbuffer.Color8(0xF0) -- light gray panel (e-ink)
+local PILL_BG    = Blitbuffer.Color8(0xE0)
+local TITLE_GRAY = Blitbuffer.Color8(0x99)
+local FLOAT_BG   = Blitbuffer.Color8(0x55) -- dark float buttons
 
 local function send_event(ui, name, ...) if ui then ui:handleEvent(Event:new(name, ...)) end end
 local function place(group, w, x, y) w.overlap_offset = { x, y }; group[#group + 1] = w; return w end
@@ -50,65 +54,288 @@ function RM:init()
     self.ges_events = { Tap = { GestureRange:new{ ges = "tap", range = function() return self.dimen end } } }
     if Device:hasKeys() then self.key_events = { Close = { { "Back" } } } end
     self.m = {
-        bar_h = math.max(U.px(130), 120), margin = U.px(45),
-        icon = U.px(64), title_px = U.px(32),
+        bar_h = math.max(U.px(130), 120), margin = U.px(40),
+        icon = U.px(56), title_px = U.px(28),
         row_h = math.max(U.px(120), 120), circle = U.px(70), track_h = U.px(70),
         panel_title_h = math.max(U.px(110), 110), font_btn_h = U.px(85), font_pitch = math.max(U.px(120), 120),
         label_px = U.px(26), panel_title_px = U.px(36),
+        -- 0.4.3 official panel
+        panel_r = U.px(36), float_d = U.px(96), float_gap = U.px(20),
+        stats_h = U.px(150), slider_h = U.px(110), pills_h = U.px(110), icon_h = U.px(140),
+        panel_pad = U.px(36),
     }
     self:_build()
 end
 
 function RM:isRolling() return self.ui and self.ui.rolling ~= nil and self.ui.document and self.ui.document.configurable ~= nil end
 
--- top bar ---------------------------------------------------------------------
-function RM:_topBar(g)
-    local m, W = self.m, self.W
-    place(g, FrameContainer:new{ bordersize = 0, padding = 0, margin = 0, background = U.WHITE,
-        width = W, height = m.bar_h, U.hspan(0) }, 0, 0)
-    place(g, U.hline(W, 1), 0, m.bar_h - 1)
+-- 0.4.3 official reading menu ------------------------------------------------
+-- Stats for the 3-column row: progress + ETA, reading time, notes.
+function RM:_bookStats()
+    local pct, eta_h, mins, notes = 0, nil, 0, 0
+    local ui = self.ui
+    if ui and ui.document then
+        pcall(function()
+            local cur = ui:getCurrentPage() or 1
+            local total = ui.document:getPageCount() or 1
+            if total > 0 then pct = math.floor(100 * cur / total + 0.5) end
+        end)
+        pcall(function()
+            local ann = ui.annotation and ui.annotation.annotations
+            if type(ann) == "table" then notes = #ann end
+        end)
+        pcall(function()
+            local bm = ui.bookmark and ui.bookmark.bookmarks
+            if notes == 0 and type(bm) == "table" then notes = #bm end
+        end)
+    end
+    -- KOReader statistics plugin (if loaded)
+    pcall(function()
+        local st = ui.statistics
+        if st and st.id_curr_book and st.getBookStat then
+            local ok, data = pcall(st.getBookStat, st)
+            if ok and type(data) == "table" and data.total_time_in_sec then
+                mins = math.floor(data.total_time_in_sec / 60 + 0.5)
+            end
+        end
+        if mins == 0 and st and st.data and st.data.total_time_in_sec then
+            mins = math.floor(st.data.total_time_in_sec / 60 + 0.5)
+        end
+        -- ETA from avg page time when available
+        if st and st.data and st.data.total_time_in_sec and st.data.total_read_pages
+                and st.data.total_read_pages > 0 and ui.document then
+            local left = (ui.document:getPageCount() or 0) - (ui:getCurrentPage() or 0)
+            if left > 0 then
+                local avg = st.data.total_time_in_sec / st.data.total_read_pages
+                eta_h = math.max(1, math.floor(left * avg / 3600 + 0.5))
+            end
+        end
+    end)
+    if not eta_h and pct > 0 and pct < 100 and mins > 0 then
+        eta_h = math.max(1, math.floor(mins * (100 - pct) / pct / 60 + 0.5))
+    end
+    return pct, eta_h, mins, notes
+end
+
+function RM:_chapterTitle()
     local chapter
     pcall(function() chapter = self.ui.toc:getTocTitleOfCurrentPage() end)
     local book = self.ui.doc_props and self.ui.doc_props.display_title or ""
-    local title = Logic.reader_title(chapter, book)
-    local right_w = 2 * m.bar_h
-    local back = HorizontalGroup:new{ align = "center",
-        U.icon("back_chevron", math.floor(m.icon * 0.6)), U.hspan(U.px(12)),
-        U.text(title, m.title_px, false, W - 2 * m.margin - right_w - m.icon) }
-    place(g, LeftContainer:new{ dimen = Geom:new{ w = W - right_w, h = m.bar_h },
-        HorizontalGroup:new{ U.hspan(m.margin), back } }, 0, 0)
-    local marked = false
-    pcall(function() marked = self.ui.bookmark:isPageBookmarked() end)
-    local bx = W - right_w
-    place(g, CenterContainer:new{ dimen = Geom:new{ w = m.bar_h, h = m.bar_h },
-        U.icon(marked and "bookmark_active" or "bookmark", m.icon) }, bx, 0)
-    place(g, CenterContainer:new{ dimen = Geom:new{ w = m.bar_h, h = m.bar_h }, U.icon("more", m.icon) }, bx + m.bar_h, 0)
-    self:_hit(rect(0, 0, bx, m.bar_h), function() self:back() end)
-    self:_hit(rect(bx, 0, m.bar_h, m.bar_h), function() self:toggleBookmark() end)
-    self:_hit(rect(bx + m.bar_h, 0, m.bar_h, m.bar_h), function() self:showMore() end)
+    return Logic.reader_title(chapter, book) or ""
 end
 
--- bottom bar --------------------------------------------------------------------
-RM.BOTTOM = {
-    { icon = "rm_back",       fn = "back" },
-    { icon = "rm_toc",        fn = "showToc" },
-    { icon = "tab_discover",  fn = "showProgress" }, -- 指南针 = 进度/跳页 (UI-SPEC, CEO 定)
-    { icon = "rm_brightness", fn = "showBrightness" },
-    { icon = "rm_font",       fn = "toggleFont" },
-}
+function RM:_progressFrac()
+    local ui = self.ui
+    if not (ui and ui.document) then return 0 end
+    local cur, total = 1, 1
+    pcall(function() cur = ui:getCurrentPage() or 1; total = ui.document:getPageCount() or 1 end)
+    if total <= 1 then return 0 end
+    return (cur - 1) / (total - 1)
+end
 
+-- Top: small gray chapter title only (official look).
+function RM:_topBar(g)
+    local m, W = self.m, self.W
+    local title = self:_chapterTitle()
+    local t = U.text(title, m.title_px, false, W - 2 * m.margin)
+    t.fgcolor = TITLE_GRAY
+    place(g, t, m.margin, U.px(28))
+end
+
+-- Floating round AI / 听 buttons, just above the panel.
+function RM:_floatButtons(g, panel_y)
+    local m, W = self.m, self.W
+    local d, gap = m.float_d, m.float_gap
+    local y = panel_y - d - U.px(20)
+    local x_ai = W - m.margin - 2 * d - gap
+    local x_tts = W - m.margin - d
+    local function float(label, x, enabled, fn)
+        local txt = U.text(label, U.px(32), true)
+        txt.fgcolor = U.WHITE
+        if not enabled then txt.fgcolor = Blitbuffer.Color8(0xBB) end
+        place(g, FrameContainer:new{ bordersize = 0, padding = 0, margin = 0,
+            background = enabled and FLOAT_BG or Blitbuffer.Color8(0xAA),
+            radius = math.floor(d / 2),
+            CenterContainer:new{ dimen = Geom:new{ w = d, h = d }, txt } }, x, y)
+        self:_hit(rect(x, y, d, d), fn)
+    end
+    float("AI", x_ai, self:_hasAI(), function() self:openAI() end)
+    float("听", x_tts, self:_hasTTS(), function() self:openTTS() end)
+end
+
+function RM:_hasTTS()
+    if Device and Device.canTTS and Device:canTTS() then return true end
+    local ui = self.ui
+    if ui and (ui.tts or ui.texttospeech) then return true end
+    return false
+end
+function RM:_hasAI()
+    -- No built-in AI; dictionary is the closest substitute when available.
+    return self.ui and self.ui.dictionary ~= nil
+end
+
+function RM:openAI()
+    if self.ui and self.ui.dictionary then
+        self:close()
+        send_event(self.ui, "ShowDictionaryLookup")
+    else
+        UIManager:show(require("ui/widget/infomessage"):new{ text = "本机没有 AI 功能；可在 KOReader 安装词典作替代。", timeout = 2 })
+    end
+end
+function RM:openTTS()
+    if Device and Device.canTTS and Device:canTTS() then
+        self:close()
+        send_event(self.ui, "SpeakCurrentPage")
+        return
+    end
+    -- Try Text-to-Speech plugin / ReaderTTS if present
+    if self.ui and self.ui.tts and type(self.ui.tts.onTTSStart) == "function" then
+        self:close(); pcall(self.ui.tts.onTTSStart, self.ui.tts); return
+    end
+    UIManager:show(require("ui/widget/infomessage"):new{ text = "本机没有朗读/TTS。", timeout = 2 })
+end
+
+-- Bottom official panel (rounded light gray).
 function RM:_bottomBar(g)
+    local m, W, H = self.m, self.W, self.H
+    local panel_h = m.stats_h + m.slider_h + m.pills_h + m.icon_h + U.px(20)
+    local y0 = H - panel_h
+    self.panel_rect = rect(0, y0, W, panel_h)
+    place(g, FrameContainer:new{ bordersize = 0, padding = 0, margin = 0, background = PANEL_BG,
+        radius = m.panel_r, width = W, height = panel_h, U.hspan(0) }, 0, y0)
+    self:_floatButtons(g, y0)
+    local y = y0 + U.px(16)
+    -- stats row
+    local pct, eta_h, mins, notes = self:_bookStats()
+    local cols = {
+        { tostring(pct) .. "%", eta_h and ("约 " .. eta_h .. " 小时后读完") or "阅读进度" },
+        { tostring(mins) .. " 分钟", "阅读时长" },
+        { tostring(notes) .. " 条", "笔记" },
+    }
+    local cw = math.floor(W / 3)
+    for i, c in ipairs(cols) do
+        local big = U.text(c[1], U.px(44), true)
+        local sm = U.text(c[2], U.px(24)); sm.fgcolor = LABEL_GRAY
+        local cx = (i - 1) * cw
+        place(g, CenterContainer:new{ dimen = Geom:new{ w = cw, h = U.px(70) }, big }, cx, y)
+        place(g, CenterContainer:new{ dimen = Geom:new{ w = cw, h = U.px(50) }, sm }, cx, y + U.px(70))
+        if i < 3 then place(g, U.vline(U.px(80), 1), cx + cw, y + U.px(20)) end
+    end
+    y = y + m.stats_h
+    -- chapter progress slider with ‹ ›
+    local chev = U.px(64)
+    local track_x = m.margin + chev + U.px(12)
+    local track_w = W - 2 * (m.margin + chev + U.px(12))
+    local track_h = U.px(8)
+    local ty = y + math.floor((m.slider_h - track_h) / 2)
+    local left = U.text("‹", U.px(48), true)
+    local right = U.text("›", U.px(48), true)
+    place(g, CenterContainer:new{ dimen = Geom:new{ w = chev, h = m.slider_h }, left }, m.margin, y)
+    place(g, CenterContainer:new{ dimen = Geom:new{ w = chev, h = m.slider_h }, right }, W - m.margin - chev, y)
+    self:_hit(rect(m.margin, y, chev, m.slider_h), function() self:prevChapter() end)
+    self:_hit(rect(W - m.margin - chev, y, chev, m.slider_h), function() self:nextChapter() end)
+    place(g, FrameContainer:new{ bordersize = 0, background = Blitbuffer.Color8(0xCC),
+        radius = 4, padding = 0, margin = 0, width = track_w, height = track_h, U.hspan(0) }, track_x, ty)
+    local frac = self:_progressFrac()
+    local fill = math.max(U.px(8), math.floor(track_w * frac))
+    place(g, FrameContainer:new{ bordersize = 0, background = U.BLACK,
+        radius = 4, padding = 0, margin = 0, width = fill, height = track_h, U.hspan(0) }, track_x, ty)
+    local kd = U.px(36)
+    place(g, FrameContainer:new{ bordersize = 2, color = U.BLACK, background = U.WHITE,
+        radius = math.floor(kd / 2), padding = 0, margin = 0, width = kd, height = kd, U.hspan(0) },
+        track_x + fill - math.floor(kd / 2), y + math.floor((m.slider_h - kd) / 2))
+    self:_hit(rect(track_x, y, track_w, m.slider_h), function(pos)
+        local f = math.max(0, math.min(1, (pos.x - track_x) / track_w))
+        self:gotoFrac(f)
+    end)
+    y = y + m.slider_h
+    -- two pill buttons
+    local pw = math.floor((W - 2 * m.margin - U.px(24)) / 2)
+    local ph = U.px(80)
+    local py = y + math.floor((m.pills_h - ph) / 2)
+    local function pill(text, x, fn)
+        local t = U.text(text, U.px(30))
+        place(g, FrameContainer:new{ bordersize = 0, background = PILL_BG, radius = math.floor(ph / 2),
+            padding = 0, margin = 0, CenterContainer:new{ dimen = Geom:new{ w = pw, h = ph }, t } }, x, py)
+        self:_hit(rect(x, py, pw, ph), fn)
+    end
+    pill("阅读明细", m.margin, function() self:openReadingDetail() end)
+    local auto_on = false
+    pcall(function()
+        local G = rawget(_G, "G_reader_settings")
+        auto_on = G and G:isTrue("autoturn_enabled")
+    end)
+    pill(auto_on and "关闭自动翻页" or "开启自动翻页", m.margin + pw + U.px(24), function() self:toggleAutoTurn() end)
+    y = y + m.pills_h
+    -- icon bar: ☰  compass  center-dot  sun  A
+    local icons = {
+        { draw = "toc",     fn = function() self:showTocSheet() end },
+        { draw = "compass", fn = function() self:showBookmarks() end }, -- closest: 书签/跳转
+        { draw = "dot",     fn = function() self:showProgress() end },  -- official center control = progress/jump
+        { draw = "sun",     fn = function() self:showBrightnessPanel() end },
+        { draw = "A",       fn = function() self:toggleFont() end },
+    }
+    for i, b in ipairs(icons) do
+        local x, sw = Logic.slot(W, #icons, i)
+        self:_drawIcon(g, b.draw, x, y, sw, m.icon_h)
+        self:_hit(rect(x, y, sw, m.icon_h), b.fn)
+    end
+end
+
+function RM:_drawIcon(g, kind, x, y, sw, h)
+    if kind == "toc" then
+        local t = U.text("☰", U.px(44))
+        place(g, CenterContainer:new{ dimen = Geom:new{ w = sw, h = h }, t }, x, y)
+    elseif kind == "compass" then
+        -- compass: circle + diagonal needle (e-ink)
+        local d = U.px(52)
+        local cx = x + math.floor((sw - d) / 2)
+        local cy = y + math.floor((h - d) / 2)
+        place(g, FrameContainer:new{ bordersize = 2, color = U.BLACK, background = U.WHITE,
+            radius = math.floor(d / 2), padding = 0, margin = 0, width = d, height = d, U.hspan(0) }, cx, cy)
+        place(g, U.hline(math.floor(d * 0.55), 2), cx + math.floor(d * 0.22), cy + math.floor(d / 2) - 1)
+        place(g, U.vline(math.floor(d * 0.55), 2), cx + math.floor(d / 2) - 1, cy + math.floor(d * 0.22))
+    elseif kind == "dot" then
+        -- official: filled center dot on a short horizontal line
+        local line_w = U.px(56)
+        local line_h = U.px(4)
+        local d = U.px(28)
+        local lx = x + math.floor((sw - line_w) / 2)
+        local ly = y + math.floor(h / 2) - math.floor(line_h / 2)
+        place(g, FrameContainer:new{ bordersize = 0, background = Blitbuffer.Color8(0xBB),
+            radius = 2, padding = 0, margin = 0, width = line_w, height = line_h, U.hspan(0) }, lx, ly)
+        place(g, FrameContainer:new{ bordersize = 0, background = U.BLACK,
+            radius = math.floor(d / 2), padding = 0, margin = 0, width = d, height = d, U.hspan(0) },
+            x + math.floor((sw - d) / 2), y + math.floor((h - d) / 2))
+    elseif kind == "sun" then
+        local t = U.text("☀", U.px(40))
+        place(g, CenterContainer:new{ dimen = Geom:new{ w = sw, h = h }, t }, x, y)
+    elseif kind == "A" then
+        -- 0.4.2 layout: rm_font / rm_font_active SVG icons (do not restyle)
+        local name = self.font_open and "rm_font_active" or "rm_font"
+        place(g, CenterContainer:new{ dimen = Geom:new{ w = sw, h = h },
+            U.icon(name, self.m.icon) }, x, y)
+    end
+end
+
+-- 0.4.2-style thin icon strip under the font panel (not the tall official panel).
+function RM:_fontIconBar(g)
     local m, W, H = self.m, self.W, self.H
     local y = H - m.bar_h
     place(g, FrameContainer:new{ bordersize = 0, padding = 0, margin = 0, background = U.WHITE,
         width = W, height = m.bar_h, U.hspan(0) }, 0, y)
     place(g, U.hline(W, 1), 0, y)
-    for i, b in ipairs(RM.BOTTOM) do
-        local x, sw = Logic.slot(W, #RM.BOTTOM, i)
-        local name = b.icon
-        if b.fn == "toggleFont" and self.font_open then name = "rm_font_active" end
-        place(g, CenterContainer:new{ dimen = Geom:new{ w = sw, h = m.bar_h }, U.icon(name, m.icon) }, x, y)
-        self:_hit(rect(x, y, sw, m.bar_h), function() self[b.fn](self) end)
+    local icons = {
+        { draw = "toc",     fn = function() self:showTocSheet() end },
+        { draw = "compass", fn = function() self:showBookmarks() end },
+        { draw = "dot",     fn = function() self:showProgress() end },
+        { draw = "sun",     fn = function() self:showBrightnessPanel() end },
+        { draw = "A",       fn = function() self:toggleFont() end },
+    }
+    for i, b in ipairs(icons) do
+        local x, sw = Logic.slot(W, #icons, i)
+        self:_drawIcon(g, b.draw, x, y, sw, m.bar_h)
+        self:_hit(rect(x, y, sw, m.bar_h), b.fn)
     end
 end
 
@@ -414,13 +641,18 @@ function RM:_build()
     if self[1] then self[1]:free() end
     self.hits = {}
     self.panel_rect = nil
+    self.toc_rect = nil
     local g = OverlapGroup:new{ dimen = Geom:new{ w = self.W, h = self.H } }
-    -- UI-SPEC/ref 05-font: the font panel is shown without the top bar.
-    if not self.font_open and not self.sheet_open then self:_topBar(g) end
-    if self.sheet_open then
-        self:_sheet(g) -- bottom sheet replaces the icon bar (UI-LAYOUT §2)
+    if self.toc_open then
+        self:_tocSheet(g)
+    elseif self.sheet_open then
+        self:_sheet(g)
+    elseif self.font_open then
+        -- 0.4.2: font panel above a thin icon bar (A = rm_font_active)
+        self:_fontPanel(g)
+        self:_fontIconBar(g)
     else
-        if self.font_open then self:_fontPanel(g) end
+        self:_topBar(g)
         self:_bottomBar(g)
     end
     self[1] = g
@@ -438,21 +670,27 @@ function RM:onTap(_, ges)
         local h = self.hits[i]
         if U.inside(h.r, p.x, p.y) then h.fn(p); return true end
     end
-    if self.sheet_open and not U.inside(self.panel_rect, p.x, p.y) then
-        self:close(); return true -- tap on the page closes the sheet (partial refresh)
-    end
-    if self.font_open and not U.inside(self.panel_rect, p.x, p.y) then
-        self.font_open = false
-        self:refresh("full")
+    if self.toc_open then
+        if not (self.toc_rect and U.inside(self.toc_rect, p.x, p.y)) then
+            self.toc_open = false; self:close(); return true -- tap outside dismisses TOC
+        end
         return true
     end
-    self:close()
-    return true
+    if self.sheet_open and self.panel_rect and not U.inside(self.panel_rect, p.x, p.y) then
+        self:close(); return true
+    end
+    if self.font_open and self.panel_rect and not U.inside(self.panel_rect, p.x, p.y) then
+        self.font_open = false
+        self:refresh("full") -- 0.4.2 font panel dismiss
+        return true
+    end
+    -- tapping the uncovered page dismisses the reading menu (partial)
+    self:close(); return true
 end
 
 function RM:close()
-    -- v0.3.6: the settings sheet closes with a partial refresh (no full flash)
-    UIManager:close(self, self.sheet_open and "ui" or "full")
+    -- font panel (0.4.2) full; everything else partial (0.4.3 snappy dismiss)
+    UIManager:close(self, self.font_open and "full" or "ui")
 end
 function RM:onClose() self:close(); return true end
 function RM:onCloseWidget() if self[1] then self[1]:free() end end
@@ -464,25 +702,178 @@ function RM:back()
     self:close()
     if self.on_back then self.on_back() end
 end
-function RM:showToc() self:close(); send(self.ui, "ShowToc") end
+function RM:showToc() self:showTocSheet() end
 function RM:showProgress() self:close(); send(self.ui, "ShowSkimtoDialog") end
-function RM:showBrightness()
-    self:close()
+function RM:showBrightness() self:showBrightnessPanel() end
+function RM:showBrightnessPanel()
+    -- Prefer in-menu brightness sheet when device has frontlight; else KOReader dialog.
     if Device:hasFrontlight() then
-        UIManager:broadcastEvent(Event:new("ShowFlDialog"))
-    else
-        UIManager:show(require("ui/widget/infomessage"):new{ text = "此设备没有前光。" })
+        self.sheet_open = true; self.font_open = false; self.toc_open = false
+        self:refresh("ui"); return
     end
+    self:close()
+    UIManager:broadcastEvent(Event:new("ShowFlDialog"))
 end
 function RM:toggleFont()
-    -- v0.3.8: back to the 0.3.3 look: 「A」 opens the 字体设置 panel directly
-    -- (the 0.3.6 阅读设置 sheet is kept as RM:openSheet but not shown).
+    -- 0.4.2: 「A」 opens/closes 字体设置 with a full refresh
     if not self:isRolling() then
-        -- PDF/DjVu/CBZ: no reflowable font settings; open KOReader's own bottom config instead
         self:close(); send(self.ui, "ShowConfigMenu"); return
     end
     self.font_open = not self.font_open
+    self.sheet_open = false; self.toc_open = false
     self:refresh("full")
+end
+
+function RM:prevChapter()
+    local toc = self.ui and self.ui.toc
+    if not toc then return end
+    local cur = self.ui:getCurrentPage()
+    local prev
+    pcall(function() prev = toc:getPreviousChapter(cur) end)
+    if prev then send(self.ui, "GotoPage", prev); self:refresh("ui") end
+end
+function RM:nextChapter()
+    local toc = self.ui and self.ui.toc
+    if not toc then return end
+    local cur = self.ui:getCurrentPage()
+    local nxt
+    pcall(function() nxt = toc:getNextChapter(cur) end)
+    if nxt then send(self.ui, "GotoPage", nxt); self:refresh("ui") end
+end
+function RM:gotoFrac(f)
+    local doc = self.ui and self.ui.document
+    if not doc then return end
+    local total = 1
+    pcall(function() total = doc:getPageCount() or 1 end)
+    local page = math.max(1, math.min(total, math.floor(f * (total - 1) + 1.5)))
+    send(self.ui, "GotoPage", page)
+    self:refresh("ui")
+end
+
+function RM:openReadingDetail()
+    self:close()
+    -- Prefer weread reading stats for this book; else KOReader statistics
+    local w = self.weread
+    if w and type(w.showReadStats) == "function" then pcall(w.showReadStats, w); return end
+    send(self.ui, "ShowBookStat")
+end
+
+function RM:toggleAutoTurn()
+    local G = rawget(_G, "G_reader_settings")
+    local at = self.ui and self.ui.autoturn
+    if at and type(at.onMenuHold) == "function" then
+        -- open autoturn's own config (seconds picker)
+        self:close(); pcall(function()
+            -- flip via settings + restart schedule
+            local on = G and G:isTrue("autoturn_enabled")
+            if on then
+                G:makeFalse("autoturn_enabled"); at.enabled = false
+                if at._unschedule then at:_unschedule() end
+            else
+                if not G:readSetting("autoturn_timeout_seconds") then
+                    G:saveSetting("autoturn_timeout_seconds", 30)
+                end
+                at.autoturn_sec = G:readSetting("autoturn_timeout_seconds", 30)
+                G:makeTrue("autoturn_enabled"); at.enabled = true
+                if at._start then at:_start() end
+            end
+        end)
+        self:refresh("ui"); return
+    end
+    if G then
+        if G:isTrue("autoturn_enabled") then G:makeFalse("autoturn_enabled")
+        else
+            if not G:readSetting("autoturn_timeout_seconds") then G:saveSetting("autoturn_timeout_seconds", 30) end
+            G:makeTrue("autoturn_enabled")
+        end
+    end
+    self:refresh("ui")
+end
+
+function RM:showBookmarks()
+    self:close(); send(self.ui, "ShowBookmark")
+end
+
+-- Half-screen TOC sheet (0.4.3): covers ~55% of the page; tap outside dismisses.
+function RM:showTocSheet()
+    self.toc_open = true; self.font_open = false; self.sheet_open = false
+    self:refresh("ui")
+end
+
+function RM:_tocSheet(g)
+    local m, W, H = self.m, self.W, self.H
+    local sheet_h = math.floor(H * 0.55)
+    local y0 = H - sheet_h
+    self.toc_rect = rect(0, y0, W, sheet_h)
+    place(g, FrameContainer:new{ bordersize = 0, padding = 0, margin = 0, background = PANEL_BG,
+        radius = m.panel_r, width = W, height = sheet_h, U.hspan(0) }, 0, y0)
+    local title = U.text("目录", U.px(40), true)
+    place(g, title, m.margin, y0 + U.px(28))
+    local close = U.text("关闭", U.px(30)); close.fgcolor = LABEL_GRAY
+    place(g, close, W - m.margin - close:getSize().w, y0 + U.px(32))
+    self:_hit(rect(W - m.margin - U.px(120), y0, U.px(120) + m.margin, U.px(80)), function()
+        self.toc_open = false; self:close()
+    end)
+    -- chapters
+    local toc, cur = {}, 1
+    pcall(function() toc = self.ui.toc.toc or self.ui.document:getToc() or {} end)
+    pcall(function() cur = self.ui:getCurrentPage() end)
+    local row_h = U.px(88)
+    local y = y0 + U.px(100)
+    local max_rows = math.floor((sheet_h - U.px(120)) / row_h)
+    -- start near current chapter
+    local start = 1
+    for i, ch in ipairs(toc) do
+        if ch.page and ch.page <= cur then start = i end
+    end
+    start = math.max(1, math.min(start - 2, #toc - max_rows + 1))
+    if start < 1 then start = 1 end
+    local shown = 0
+    for i = start, #toc do
+        if shown >= max_rows then break end
+        local ch = toc[i]
+        local label = (ch.title or ("第 " .. i .. " 章"))
+        local active = ch.page and cur >= ch.page and (not toc[i + 1] or cur < (toc[i + 1].page or 1e9))
+        local t = U.text(label, U.px(30), active, W - 2 * m.margin - U.px(80))
+        if not active then t.fgcolor = LABEL_GRAY end
+        place(g, t, m.margin, y + math.floor((row_h - t:getSize().h) / 2))
+        local pg = U.text(tostring(ch.page or ""), U.px(26)); pg.fgcolor = LABEL_GRAY
+        place(g, pg, W - m.margin - pg:getSize().w, y + math.floor((row_h - pg:getSize().h) / 2))
+        place(g, U.hline(W - 2 * m.margin, 1), m.margin, y + row_h - 1)
+        local page = ch.page
+        self:_hit(rect(0, y, W, row_h), function()
+            self.toc_open = false; self:close()
+            if page then send(self.ui, "GotoPage", page) end
+        end)
+        y = y + row_h; shown = shown + 1
+    end
+    if #toc == 0 then
+        local empty = U.text("本书没有目录", U.px(30)); empty.fgcolor = LABEL_GRAY
+        place(g, empty, m.margin, y0 + U.px(160))
+    end
+end
+
+-- 想法: download + match via weread's annotation sync (existing APIs).
+function RM:syncThoughts()
+    self:close()
+    local w = self.weread
+    if not w then
+        UIManager:show(require("ui/widget/infomessage"):new{ text = "微信读书模块未加载。", timeout = 2 }); return
+    end
+    -- weread's unified annotation sync: download underlines/thoughts and match to chapters
+    if type(w.startUnifiedAnnotationSync) == "function" then
+        local ok, e = pcall(w.startUnifiedAnnotationSync, w, {})
+        if not ok then
+            logger.warn("realweidu: thoughts sync", e)
+            UIManager:show(require("ui/widget/infomessage"):new{ text = "划线/想法同步失败：" .. tostring(e), timeout = 3 })
+        end
+        return
+    end
+    if type(w.chooseAnnotationChapters) == "function" then
+        pcall(w.chooseAnnotationChapters, w); return
+    end
+    UIManager:show(require("ui/widget/infomessage"):new{
+        text = "划线/想法同步入口不可用。可在 ☰ Real微读 → 微信读书功能 里操作。", timeout = 3 })
 end
 function RM:toggleBookmark()
     send(self.ui, "ToggleBookmark")
@@ -519,6 +910,7 @@ function RM:showMore()
         buttons = {
             item(marked and "删除书签" or "添加书签", function() self:toggleBookmark() end),
             item("书签列表", function() self:close(); send(self.ui, "ShowBookmark") end),
+            item("下载并匹配划线/想法", function() self:syncThoughts() end),
             item("搜索全书", function() self:close(); send(self.ui, "ShowFulltextSearchInput") end),
             item("书籍详情", function()
                 self:close()

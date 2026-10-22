@@ -51,7 +51,10 @@ local function rect(x, y, w, h) return Geom:new{ x = x, y = y, w = w, h = h } en
 function RM:init()
     self.W, self.H = Screen:getWidth(), Screen:getHeight()
     self.dimen = rect(0, 0, self.W, self.H)
-    self.ges_events = { Tap = { GestureRange:new{ ges = "tap", range = function() return self.dimen end } } }
+    self.ges_events = {
+        Tap = { GestureRange:new{ ges = "tap", range = function() return self.dimen end } },
+        Swipe = { GestureRange:new{ ges = "swipe", range = function() return self.dimen end } }, -- 0.4.9 TOC paging
+    }
     if Device:hasKeys() then self.key_events = { Close = { { "Back" } } } end
     self.m = {
         bar_h = math.max(U.px(130), 120), margin = U.px(40),
@@ -685,7 +688,7 @@ function RM:onTap(_, ges)
     end
     if self.toc_open then
         if not (self.toc_rect and U.inside(self.toc_rect, p.x, p.y)) then
-            self.toc_open = false; self:close(); return true -- tap outside dismisses TOC
+            self.toc_open = false; self.toc_page = nil; self:close(); return true -- tap outside dismisses TOC
         end
         return true
     end
@@ -942,7 +945,19 @@ function RM:showBookmarks()
 end
 
 -- TOC sidebar (0.4.8: left 80%, blank right strip closes it).
+function RM:tocTurn(delta)
+    local count = self.toc_page_count or 1
+    local np = Logic.toc_clamp_page((self.toc_page or 1) + delta, count)
+    if np ~= self.toc_page then self.toc_page = np; self:refresh("ui") end
+end
+function RM:onSwipe(_, ges)
+    if not self.toc_open then return false end
+    local d = Logic.toc_swipe_delta(ges and ges.direction)
+    if d ~= 0 then self:tocTurn(d) end
+    return true
+end
 function RM:showTocSheet()
+    self.toc_page = nil -- reopen on the current chapter's page
     self.toc_open = true; self.font_open = false; self.sheet_open = false
     self:refresh("ui")
 end
@@ -963,20 +978,21 @@ function RM:_tocSheet(g)
     local toc, cur = {}, 1
     pcall(function() toc = self.ui.toc.toc or self.ui.document:getToc() or {} end)
     pcall(function() cur = self.ui:getCurrentPage() end)
+    -- 0.4.9: paginated list (swipe up/down or ‹ › footer), opens on the current chapter's page
     local row_h = U.px(88)
+    local foot_h = U.px(110)
     local y = y0 + U.px(120)
-    local max_rows = math.floor((H - U.px(140)) / row_h)
-    local start = 1
-    for i, ch in ipairs(toc) do
-        if ch.page and ch.page <= cur then start = i end
-    end
-    start = math.max(1, math.min(start - 2, #toc - max_rows + 1))
-    local shown = 0
-    for i = start, #toc do
-        if shown >= max_rows then break end
+    local per = Logic.toc_rows_per_page(H - U.px(120) - foot_h, row_h)
+    local count = Logic.toc_page_count(#toc, per)
+    local cur_idx = Logic.toc_current_index(toc, cur)
+    if not self.toc_page then self.toc_page = Logic.toc_page_of(cur_idx, per) end
+    self.toc_page = Logic.toc_clamp_page(self.toc_page, count)
+    self.toc_page_count = count
+    local first, last = Logic.toc_page_range(self.toc_page, per, #toc)
+    for i = first, last do
         local ch = toc[i]
         local label = (ch.title or ("第 " .. i .. " 章"))
-        local active = ch.page and cur >= ch.page and (not toc[i + 1] or cur < (toc[i + 1].page or 1e9))
+        local active = (i == cur_idx)
         local t = U.text(label, U.px(30), active, PW - 2 * m.margin - U.px(80))
         if not active then t.fgcolor = LABEL_GRAY end
         place(g, t, m.margin, y + math.floor((row_h - t:getSize().h) / 2))
@@ -985,10 +1001,25 @@ function RM:_tocSheet(g)
         place(g, U.hline(PW - 2 * m.margin, 1), m.margin, y + row_h - 1)
         local page = ch.page
         self:_hit(rect(0, y, PW, row_h), function()
-            self.toc_open = false; self:close()
+            self.toc_open = false; self.toc_page = nil; self:close()
             if page then send(self.ui, "GotoPage", page) end
         end)
-        y = y + row_h; shown = shown + 1
+        y = y + row_h
+    end
+    if count > 1 then
+        local fy = H - foot_h
+        place(g, U.hline(PW - 2 * m.margin, 1), m.margin, fy)
+        local bw = math.floor(PW / 3)
+        local function fbtn(text, x, enabled, fn)
+            local t = U.text(text, U.px(30), enabled)
+            if not enabled then t.fgcolor = LABEL_GRAY end
+            place(g, CenterContainer:new{ dimen = Geom:new{ w = bw, h = foot_h }, t }, x, fy)
+            self:_hit(rect(x, fy, bw, foot_h), fn)
+        end
+        fbtn("‹ 上一页", 0, self.toc_page > 1, function() self:tocTurn(-1) end)
+        place(g, CenterContainer:new{ dimen = Geom:new{ w = bw, h = foot_h },
+            U.text(self.toc_page .. " / " .. count, U.px(28)) }, bw, fy)
+        fbtn("下一页 ›", 2 * bw, self.toc_page < count, function() self:tocTurn(1) end)
     end
     if #toc == 0 then
         local empty = U.text("本书没有目录", U.px(30)); empty.fgcolor = LABEL_GRAY

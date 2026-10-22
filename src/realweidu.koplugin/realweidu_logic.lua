@@ -291,6 +291,39 @@ function M.fmt_duration(secs)
     return mm == 0 and (h .. "小时") or (h .. "小时" .. mm .. "分钟")
 end
 
+-- 0.4.9 TOC sidebar pagination -------------------------------------------------
+-- rows_per_page(avail_h, row_h) >= 1
+function M.toc_rows_per_page(avail_h, row_h)
+    if type(avail_h) ~= "number" or type(row_h) ~= "number" or row_h <= 0 then return 1 end
+    return math.max(1, math.floor(avail_h / row_h))
+end
+function M.toc_page_count(n, per)
+    if type(n) ~= "number" or n <= 0 then return 1 end
+    return math.max(1, math.ceil(n / per))
+end
+-- index (1-based) of the chapter containing page `cur` in a toc of { page = } entries; 1 if none
+function M.toc_current_index(toc, cur)
+    local idx = 1
+    if type(toc) ~= "table" or type(cur) ~= "number" then return idx end
+    for i, ch in ipairs(toc) do
+        if type(ch.page) == "number" and ch.page <= cur then idx = i end
+    end
+    return idx
+end
+function M.toc_page_of(index, per) return math.max(1, math.ceil((index or 1) / per)) end
+function M.toc_clamp_page(p, count) return math.max(1, math.min(count, p or 1)) end
+-- first/last entry indices shown on page p
+function M.toc_page_range(p, per, n)
+    local first = (p - 1) * per + 1
+    return first, math.min(n, first + per - 1)
+end
+-- KOReader list convention: swipe up (finger moves north) = next page, south = previous.
+function M.toc_swipe_delta(direction)
+    if direction == "north" or direction == "west" then return 1 end
+    if direction == "south" or direction == "east" then return -1 end
+    return 0
+end
+
 -- Compact form for inside the circle: "—" | "<1分" | "N分" | "N时" (rounded hours >= 60 min)
 function M.fmt_short(secs)
     if type(secs) ~= "number" or secs ~= secs or secs < 0 then return M.UNKNOWN end

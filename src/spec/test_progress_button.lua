@@ -81,4 +81,38 @@ check("top = ‹ title | bookmark | more", tb:find("back_chevron", 1, true) and 
 check("TOC tap outside sidebar closes", src:find("tap outside dismisses TOC", 1, true) and src:find("self.toc_rect = rect(0, 0, PW, H)", 1, true))
 do local W, H, bar = 1236, 1648, 130; local card_y = H - bar - 150 - 12
    check("card sits above bottom bar", card_y + 150 <= H - bar) end
+-- 0.4.9: TOC sidebar pagination with a 100-chapter TOC
+do
+    local toc = {}; for k = 1, 100 do toc[k] = { title = "第" .. k .. "章", page = k * 5 } end
+    local per = L.toc_rows_per_page(1648 - 120 - 110, 88)
+    check("rows per page at PW5 = 16", per == 16)
+    local count = L.toc_page_count(#toc, per)
+    check("100 chapters -> 7 pages", count == 7)
+    check("rows_per_page never 0", L.toc_rows_per_page(10, 88) == 1 and L.toc_rows_per_page(nil, 88) == 1)
+    check("empty toc -> 1 page", L.toc_page_count(0, per) == 1)
+    local idx = L.toc_current_index(toc, 252)
+    check("current chapter index (page 252 -> ch 50)", idx == 50)
+    check("opens on current chapter's page", L.toc_page_of(idx, per) == 4)
+    local f, l = L.toc_page_range(4, per, #toc)
+    check("page 4 shows 49..64 incl. current", f == 49 and l == 64 and idx >= f and idx <= l)
+    f, l = L.toc_page_range(7, per, #toc)
+    check("last page 97..100", f == 97 and l == 100)
+    check("swipe up = next, down = prev", L.toc_swipe_delta("north") == 1 and L.toc_swipe_delta("south") == -1)
+    check("swipe left = next, right = prev", L.toc_swipe_delta("west") == 1 and L.toc_swipe_delta("east") == -1)
+    check("diagonal/unknown no-op", L.toc_swipe_delta("northeast") == 0 and L.toc_swipe_delta(nil) == 0)
+    check("clamp at ends", L.toc_clamp_page(0, 7) == 1 and L.toc_clamp_page(8, 7) == 7)
+    -- walk all pages by swiping: every chapter reachable exactly once
+    local seen, p = {}, 1
+    for _ = 1, 20 do
+        local a, b = L.toc_page_range(p, per, #toc); for k = a, b do seen[k] = (seen[k] or 0) + 1 end
+        local np = L.toc_clamp_page(p + L.toc_swipe_delta("north"), count); if np == p then break end; p = np
+    end
+    local ok = true; for k = 1, 100 do if seen[k] ~= 1 then ok = false end end
+    check("swiping through reaches all 100 chapters once", ok)
+    check("menu registers Swipe gesture", src:find('Swipe = { GestureRange:new{ ges = "swipe"', 1, true) ~= nil)
+    check("onSwipe pages TOC", src:find("function RM:onSwipe", 1, true) and src:find("self:tocTurn(d)", 1, true))
+    check("footer ‹ 上一页 n/m 下一页 ›", src:find('"‹ 上一页"', 1, true) and src:find('"下一页 ›"', 1, true) and src:find('self.toc_page .. " / " .. count', 1, true))
+    check("open resets to current chapter page", src:find("self.toc_page = nil %-%- reopen on the current chapter's page") ~= nil)
+    check("right blank strip still closes", src:find("tap outside dismisses TOC", 1, true) ~= nil)
+end
 print(string.format("\n%d checks, %d failed", n, fails)); os.exit(fails == 0 and 0 or 1)

@@ -69,7 +69,7 @@ function H:init()
             end)
             return
         end
-        if MODE ~= "reader" and MODE ~= "font" and MODE ~= "sheet" and MODE ~= "progress" and MODE ~= "toc" then return end
+        if MODE ~= "reader" and MODE ~= "font" and MODE ~= "sheet" and MODE ~= "progress" and MODE ~= "toc" and MODE ~= "toc2" then return end
         _G.__wsprev_done = true
         UIManager:scheduleIn(4, function()
             local P = self.ui.realweidu
@@ -85,7 +85,15 @@ function H:init()
             end
             if MODE == "sheet" and top.toggleFont then top:toggleFont() end
             if MODE == "progress" and top.toggleProgressCard then top:toggleProgressCard() end -- 0.4.5
-            if MODE == "toc" and top.showTocSheet then top:showTocSheet() end -- 0.4.8
+            if (MODE == "toc" or MODE == "toc2") and top.showTocSheet then -- 0.4.8/0.4.9
+                if os.getenv("WSPREV_LONGTOC") then -- box only: fake 100-chapter TOC
+                    local t = {}; for k = 1, 100 do t[k] = { title = "第" .. k .. "章 荔枝使者", page = k, depth = 1 } end
+                    self.ui.toc.toc = t
+                end
+                top:showTocSheet()
+                if MODE == "toc2" then top:tocTurn(1); top:onSwipe(nil, { direction = "north" }) end
+                logger.info("WSPREV toc page", top.toc_page, "of", top.toc_page_count)
+            end
             if MODE == "progress" and top.progress_card_rect and top.slider_rect then -- 0.4.6 overlap check
                 local c, sl = top.progress_card_rect, top.slider_rect
                 logger.info("WSPREV card", c.x, c.y, c.w, c.h, "slider", sl.x, sl.y, sl.w, sl.h,
@@ -115,7 +123,7 @@ function H:init()
         end)
         return
     end
-    if MODE == "reader" or MODE == "font" or MODE == "sheet" or MODE == "pageturn" or MODE == "progress" or MODE == "toc" then
+    if MODE == "reader" or MODE == "font" or MODE == "sheet" or MODE == "pageturn" or MODE == "progress" or MODE == "toc" or MODE == "toc2" then
         _G.__wsprev_reader = true
         UIManager:scheduleIn(1, function()
             require("apps/reader/readerui"):showReader("/tmp/korprev/sample.epub")

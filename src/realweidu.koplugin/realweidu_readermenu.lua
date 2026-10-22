@@ -271,10 +271,11 @@ function RM:_bottomBar(g)
     local icons = {
         { draw = "toc",     fn = function() self:showTocSheet() end },
         { draw = "compass", fn = function() self:showBookmarks() end }, -- closest: 书签/跳转
-        { draw = "dot",     fn = function() self:showProgress() end },  -- official center control = progress/jump
+        { draw = "pct",     fn = function() self:toggleProgressCard() end }, -- 0.4.5: progress + remaining time
         { draw = "sun",     fn = function() self:showBrightnessPanel() end },
         { draw = "A",       fn = function() self:toggleFont() end },
     }
+    if self.progress_open then self:_progressCard(g, y) end
     for i, b in ipairs(icons) do
         local x, sw = Logic.slot(W, #icons, i)
         self:_drawIcon(g, b.draw, x, y, sw, m.icon_h)
@@ -307,6 +308,17 @@ function RM:_drawIcon(g, kind, x, y, sw, h)
         place(g, FrameContainer:new{ bordersize = 0, background = U.BLACK,
             radius = math.floor(d / 2), padding = 0, margin = 0, width = d, height = d, U.hspan(0) },
             x + math.floor((sw - d) / 2), y + math.floor((h - d) / 2))
+    elseif kind == "pct" then
+        -- 0.4.5: round button showing reading percent (filled when card open)
+        local d = U.px(84)
+        local on = self.progress_open
+        local info = self:_progressInfo()
+        place(g, FrameContainer:new{ bordersize = 2, color = U.BLACK, background = on and U.BLACK or U.WHITE,
+            radius = math.floor(d / 2), padding = 0, margin = 0, width = d, height = d, U.hspan(0) },
+            x + math.floor((sw - d) / 2), y + math.floor((h - d) / 2))
+        local t = U.text(info.pct_text, U.px(24), true, d)
+        if on then pcall(function() t.fgcolor = U.WHITE end) end
+        place(g, CenterContainer:new{ dimen = Geom:new{ w = sw, h = h }, t }, x, y)
     elseif kind == "sun" then
         local t = U.text("☀", U.px(40))
         place(g, CenterContainer:new{ dimen = Geom:new{ w = sw, h = h }, t }, x, y)
@@ -703,6 +715,53 @@ function RM:back()
     if self.on_back then self.on_back() end
 end
 function RM:showToc() self:showTocSheet() end
+-- 0.4.5 middle button: progress % + remaining time (chapter / book) ----------
+function RM:_progressInfo()
+    local ui = self.ui
+    local cur, total, nxt, stats
+    pcall(function() cur = ui:getCurrentPage(); total = ui.document:getPageCount() end)
+    pcall(function() nxt = ui.toc:getNextChapter(cur) end)
+    pcall(function()
+        local st = ui.statistics
+        if st then
+            stats = { avg_time = st.avg_time }
+            if st.data then
+                stats.total_time_in_sec = st.data.total_time_in_sec
+                stats.total_read_pages = st.data.total_read_pages
+            end
+        end
+    end)
+    return Logic.progress_info(cur, total, nxt, stats)
+end
+
+function RM:toggleProgressCard()
+    self.progress_open = not self.progress_open
+    self:refresh("ui") -- partial refresh, no animation
+end
+
+function RM:_progressCard(g, bar_y)
+    local m, W = self.m, self.W
+    local info = self:_progressInfo()
+    local ch = U.px(150)
+    local cw = W - 2 * m.margin
+    local cy = bar_y - ch - U.px(12)
+    local cx = m.margin
+    place(g, FrameContainer:new{ bordersize = 2, color = U.BLACK, background = U.WHITE,
+        radius = U.px(20), padding = 0, margin = 0, width = cw, height = ch, U.hspan(0) }, cx, cy)
+    local cols = {
+        { "已读", info.pct_text }, { "本章剩余", info.chapter_text }, { "全书剩余", info.book_text },
+    }
+    local colw = math.floor(cw / 3)
+    for i, c in ipairs(cols) do
+        local vx = cx + (i - 1) * colw
+        place(g, CenterContainer:new{ dimen = Geom:new{ w = colw, h = U.px(70) },
+            U.text(c[2], U.px(34), true, colw - U.px(16)) }, vx, cy + U.px(20))
+        place(g, CenterContainer:new{ dimen = Geom:new{ w = colw, h = U.px(44) },
+            U.text(c[1], m.label_px, false, colw) }, vx, cy + U.px(92))
+    end
+    self:_hit(rect(cx, cy, cw, ch), function() self:toggleProgressCard() end)
+end
+
 function RM:showProgress() self:close(); send(self.ui, "ShowSkimtoDialog") end
 function RM:showBrightness() self:showBrightnessPanel() end
 function RM:showBrightnessPanel()

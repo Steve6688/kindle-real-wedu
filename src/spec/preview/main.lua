@@ -69,7 +69,7 @@ function H:init()
             end)
             return
         end
-        if MODE ~= "reader" and MODE ~= "font" and MODE ~= "sheet" then return end
+        if MODE ~= "reader" and MODE ~= "font" and MODE ~= "sheet" and MODE ~= "progress" then return end
         _G.__wsprev_done = true
         UIManager:scheduleIn(4, function()
             local P = self.ui.realweidu
@@ -84,6 +84,7 @@ function H:init()
                 if w and w.text and w.name ~= "realweidu_readermenu" then UIManager:close(w) end
             end
             if MODE == "sheet" and top.toggleFont then top:toggleFont() end
+            if MODE == "progress" and top.toggleProgressCard then top:toggleProgressCard() end -- 0.4.5
             if MODE == "font" and top.refresh then top.font_open = true; top:refresh("ui") end
             if os.getenv("WSPREV_SET") and top.setStep then
                 local Logic = require("realweidu_logic")
@@ -108,7 +109,7 @@ function H:init()
         end)
         return
     end
-    if MODE == "reader" or MODE == "font" or MODE == "sheet" or MODE == "pageturn" then
+    if MODE == "reader" or MODE == "font" or MODE == "sheet" or MODE == "pageturn" or MODE == "progress" then
         _G.__wsprev_reader = true
         UIManager:scheduleIn(1, function()
             require("apps/reader/readerui"):showReader("/tmp/korprev/sample.epub")

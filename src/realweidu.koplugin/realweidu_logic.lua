@@ -236,4 +236,70 @@ function M.slot(w, n, i)
     return (i - 1) * sw, sw
 end
 
+-- 0.4.5 middle progress button ------------------------------------------------
+M.DEFAULT_PAGES_PER_MIN = 1   -- fallback when KOReader has no reading stats
+M.UNKNOWN = "—"
+
+-- Percent read (0..100, integer) from current page and page count; nil if unknown.
+function M.progress_pct(cur, total)
+    if type(cur) ~= "number" or type(total) ~= "number" or total <= 0 then return nil end
+    if cur < 1 then cur = 1 elseif cur > total then cur = total end
+    return math.floor(100 * cur / total + 0.5)
+end
+
+-- Average seconds per page. stats = { avg_time=, total_time_in_sec=, total_read_pages= }.
+-- Returns secs, source ("stats"|"default").
+function M.avg_page_secs(stats, default_ppm)
+    if type(stats) == "table" then
+        local a = tonumber(stats.avg_time)
+        if a and a > 0 then return a, "stats" end
+        local t, n = tonumber(stats.total_time_in_sec), tonumber(stats.total_read_pages)
+        if t and n and t > 0 and n > 0 then return t / n, "stats" end
+    end
+    local ppm = tonumber(default_ppm) or M.DEFAULT_PAGES_PER_MIN
+    if ppm <= 0 then return nil end
+    return 60 / ppm, "default"
+end
+
+-- Pages left in the book / in the chapter (next_chapter_page = first page of next chapter or nil).
+function M.pages_left_book(cur, total)
+    if type(cur) ~= "number" or type(total) ~= "number" or total <= 0 then return nil end
+    return math.max(0, total - cur)
+end
+function M.pages_left_chapter(cur, total, next_chapter_page)
+    if type(cur) ~= "number" then return nil end
+    if type(next_chapter_page) == "number" and next_chapter_page > cur then
+        return next_chapter_page - cur
+    end
+    return M.pages_left_book(cur, total)
+end
+
+function M.remaining_secs(pages_left, avg)
+    if type(pages_left) ~= "number" or type(avg) ~= "number" or avg <= 0 then return nil end
+    return pages_left * avg
+end
+
+-- "—" | "不到1分钟" | "N分钟" | "H小时" | "H小时M分钟"
+function M.fmt_duration(secs)
+    if type(secs) ~= "number" or secs ~= secs or secs < 0 then return M.UNKNOWN end
+    if secs == 0 then return "0分钟" end
+    local mins = math.floor(secs / 60 + 0.5)
+    if mins < 1 then return "不到1分钟" end
+    if mins < 60 then return mins .. "分钟" end
+    local h, mm = math.floor(mins / 60), mins % 60
+    return mm == 0 and (h .. "小时") or (h .. "小时" .. mm .. "分钟")
+end
+
+-- Everything the middle button shows. Any field may be "—".
+function M.progress_info(cur, total, next_chapter_page, stats, default_ppm)
+    local pct = M.progress_pct(cur, total)
+    local avg, src = M.avg_page_secs(stats, default_ppm)
+    return {
+        pct = pct, pct_text = pct and (pct .. "%") or M.UNKNOWN,
+        chapter_text = M.fmt_duration(M.remaining_secs(M.pages_left_chapter(cur, total, next_chapter_page), avg)),
+        book_text = M.fmt_duration(M.remaining_secs(M.pages_left_book(cur, total), avg)),
+        source = src,
+    }
+end
+
 return M

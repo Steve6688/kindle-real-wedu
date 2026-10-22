@@ -26,7 +26,7 @@ M.SPEC = {
 
 local function floor(x) return math.floor(x + 1e-9) end
 
--- opts: { screen_w, avail_h } (avail_h = height between SimpleUI top inset
+-- opts: { screen_w, avail_h } (avail_h = screen height minus
 -- and bottom bar). Returns a table of integer pixel metrics.
 function M.compute(opts)
     local S = M.SPEC

@@ -57,7 +57,7 @@ end
 
 function U.hspan(w) return HorizontalSpan:new{ width = w } end
 
--- Standalone Real微读 bottom navigation. SimpleUI used to provide this bar;
+-- Real微读 bottom navigation (发现 / 书架 / 我, no arrows), drawn by every page;
 -- keep it inside the plugin so the primary navigation never disappears.
 function U.nav_height() return math.max(U.px(128), 112) end
 
@@ -129,17 +129,9 @@ function U.inside(g, x, y)
     return g and x >= g.x and x < g.x + g.w and y >= g.y and y < g.y + g.h
 end
 
--- Content area left by SimpleUI's top inset + bottom bar (infra/sui_core.lua:403-410).
+-- Content area: the whole screen (the bottom bar is drawn by each page).
 function U.content_area()
-    local UI = package.loaded["infra/sui_core"]
-    local top, h = 0, Screen:getHeight()
-    if type(UI) == "table" and type(UI.getContentHeight) == "function" then
-        local ok_h, hh = pcall(UI.getContentHeight)
-        local ok_t, t = pcall(UI.getContentTop)
-        if ok_h and hh then h = hh end
-        if ok_t and t then top = t end
-    end
-    return top, h
+    return 0, Screen:getHeight()
 end
 
 return U

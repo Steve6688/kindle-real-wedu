@@ -1,6 +1,6 @@
 #!/bin/sh
 # Box-only: render the shelf grid in the official KOReader v2026.07.1 Linux
-# build (SDL emulator, 1236x1648 @300dpi) with SimpleUI 2.7.5 + a fake
+# build (SDL emulator, 1236x1648 @300dpi) WITHOUT SimpleUI (0.3.7) + a fake
 # logged-in weread (synthetic covers). Never copy this harness to the Kindle.
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$HERE/../.."; KW="$ROOT/.."
@@ -34,12 +34,10 @@ PY
 rm -rf /tmp/korprev/sample.sdr
 P=$K/lib/koreader/plugins
 rm -rf $P/simpleui.koplugin $P/wereadshelf.koplugin $P/zzwsprev.koplugin
-cp -r "$KW/vendor/simpleui.koplugin" "$ROOT/wereadshelf.koplugin" $P/
+cp -r "$ROOT/wereadshelf.koplugin" $P/
 mkdir -p $P/zzwsprev.koplugin && cp "$HERE/main.lua" "$HERE/_meta.lua" $P/zzwsprev.koplugin/
-S=$K/lib/koreader/settings/simpleui; mkdir -p $S
+rm -rf $K/lib/koreader/settings/simpleui
 rm -f $K/lib/koreader/settings/wereadshelf.lua # fresh install: no plugin settings at all
-[ -n "$WSPREV_FRESH" ] && rm -f $S/sui_settings.lua && FRESH=1
-[ -n "$FRESH" ] || [ -f $S/sui_settings.lua ] || printf 'return {\n ["simpleui_bar_tabs"] = { "wereadshelf_discover", "wereadshelf_open", "wereadshelf_me" },\n ["simpleui_bar_mode"] = "icons",\n ["simpleui_bar_navpager_enabled"] = true,\n}\n' > $S/sui_settings.lua
 OUT="${WSPREV_DIR:-$KW/preview}"; mkdir -p "$OUT"; cd $K/lib/koreader
 for mode in ${WSPREV_MODES:-shelf shelf2 discover me reader font}; do
   SDL_VIDEODRIVER=dummy EMULATE_READER_W=1236 EMULATE_READER_H=1648 EMULATE_READER_DPI=300 \

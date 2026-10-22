@@ -36,3 +36,8 @@ jobs:
       - name: Parse all plugin Lua sources
         run: |
           luajit -e 'local p="src/wereadshelf.koplugin"; for f in io.popen("find "..p.." -name \\\"*.lua\\\""):lines() do local ok,e=loadfile(f); assert(ok,e) end'
+
+      - name: No SimpleUI dependency (0.3.7)
+        run: |
+          test ! -e vendor/simpleui.koplugin
+          ! grep -rnE 'require\(?\s*"(features|infra|screens)/sui_' src/wereadshelf.koplugin

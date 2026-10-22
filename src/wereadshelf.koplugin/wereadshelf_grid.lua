@@ -1,13 +1,6 @@
 -- wereadshelf_grid.lua — full-screen 4-column cover grid "书架" page.
--- Built only from stock KOReader widgets (frontend/ui/widget/*). SimpleUI's
--- bottom bar is attached by SimpleUI itself through its official
--- BarInjection API (simpleui infra/sui_core.lua:1066-1135; consumed in
--- infra/sui_patches.lua:1796-1810 _shouldInjectNavbar and :1993-2025
--- _injectNavbar), which we register from main.lua.
---
--- Pagination contract understood by SimpleUI's navpager arrows:
---   fields page / page_num, methods onNextPage / onPrevPage / onGotoPage
---   (screens/sui_bottombar.lua:1059-1105, infra/sui_config.lua:2846-2851).
+-- Built only from stock KOReader widgets (frontend/ui/widget/*); own bottom bar.
+-- Paging: page / page_num, onNextPage / onPrevPage / onGotoPage (swipes, page keys).
 -- E-ink: no animation, only black / white / #D9D9D9, whole-page flips.
 local Blitbuffer      = require("ffi/blitbuffer")
 local Device          = require("device")
@@ -67,20 +60,13 @@ function ShelfGrid:init()
     self.dimen = Geom:new{ x = 0, y = 0, w = Screen:getWidth(), h = Screen:getHeight() }
     self.all_books = self.books or {}
     self.shown = Layout.filter(self.all_books, self.keyword)
-    -- Leave room for SimpleUI's top inset + bottom bar when it is present.
-    local UI = package.loaded["infra/sui_core"]
+    -- v0.3.7: full screen + Real微读's own bottom bar (no SimpleUI).
     local top, avail = 0, Screen:getHeight()
-    if type(UI) == "table" and type(UI.getContentHeight) == "function" then
-        local ok_h, h = pcall(UI.getContentHeight)
-        local ok_t, t = pcall(UI.getContentTop)
-        if ok_h and h then avail = h end
-        if ok_t and t then top = t end
-    end
     self.content_top = top
-    self.own_nav = type(UI) ~= "table"
+    self.own_nav = true
     self.nav_h = self.own_nav and U.nav_height() or 0
     self.avail_h = avail - self.nav_h
-    self.L = Layout.compute{ screen_w = Screen:getWidth(), avail_h = avail }
+    self.L = Layout.compute{ screen_w = Screen:getWidth(), avail_h = self.avail_h }
     self.page_num = Layout.page_count(#self.shown, self.L.per_page)
     self.page = Layout.clamp_page(self.page, #self.shown, self.L.per_page)
 
@@ -228,9 +214,7 @@ end
 
 function ShelfGrid:_buildBody()
     self.grid_top = self.content_top + self.L.header_h
-    -- SimpleUI's wrapper already offsets the inner widget by the top inset
-    -- (sui_core.lua:471), so the body starts at 0; content_top is only used
-    -- to translate tap coordinates.
+    -- content_top is 0 (full screen); kept to translate tap coordinates.
     local body = VerticalGroup:new{ align = "left",
         self:_buildHeader(),
         self:_buildGrid(),
@@ -242,9 +226,7 @@ function ShelfGrid:_buildBody()
     return body
 end
 
--- self[1] is a stable white frame. SimpleUI takes it as _navbar_inner and
--- wraps it (sui_patches.lua:2007-2014); on page flips we only replace the
--- frame's child, so the injected bar stays untouched.
+-- self[1] is a stable white frame; on page flips we only replace its child.
 function ShelfGrid:_build()
     self.frame = FrameContainer:new{
         bordersize = 0, padding = 0, margin = 0, background = WHITE,
@@ -262,20 +244,9 @@ function ShelfGrid:_refresh()
     UIManager:setDirty(self, "ui")
 end
 
--- Tell SimpleUI's navpager about the new page state
--- (Bottombar.syncNavpagerArrows, screens/sui_bottombar.lua:978-991).
--- Note: in the box emulator the arrow tint did not visibly change with
--- has_prev/has_next even though the bar state is updated (SimpleUI rendering);
--- paging itself works. Check on device.
-function ShelfGrid:_syncBar()
-    local BB = package.loaded["screens/sui_bottombar"]
-    local Config = package.loaded["infra/sui_config"]
-    if not (self._navbar_injected and type(BB) == "table" and type(BB.syncNavpagerArrows) == "function") then return end
-    if type(Config) == "table" and Config.isNavpagerEnabled and not Config.isNavpagerEnabled() then return end
-    pcall(BB.syncNavpagerArrows, self, self.active_action_id, self.page > 1, self.page < self.page_num)
-end
+function ShelfGrid:_syncBar() end -- 0.3.7: own bar has no page arrows
 
--- Paging API (SimpleUI navpager + keys + swipes) ---------------------------------
+-- Paging API (keys + swipes) ---------------------------------
 
 function ShelfGrid:onGotoPage(p)
     p = Layout.clamp_page(p, #self.shown, self.L.per_page)

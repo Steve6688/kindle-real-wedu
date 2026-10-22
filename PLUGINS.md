@@ -1,7 +1,7 @@
 # KOReader 微信读书复刻 — 插件调研（2026-10-21）
 
 目标设备：Kindle Paperwhite 5，固件 5.16.2.1.1（已越狱，不升级）。所有组件仅放在 `/mnt/us/koreader/`（USB 根目录 `koreader/`）下，不改 Kindle 系统。
-源码只读克隆在 `vendor/`：weread.koplugin@ae3930f(2026-10-18)、miuread-koreader@8aac230(2026-10-08, v6.0.0)、simpleui.koplugin@dd541fc(2026-10-19)。
+源码只读克隆在 `vendor/`：weread.koplugin@ae3930f(2026-10-18)、miuread-koreader@8aac230(2026-10-08, v6.0.0)（simpleui.koplugin 快照已于 0.3.7 删除；Real微读不再使用 SimpleUI，下文为早期调研记录）。
 
 ## 1. KOReader 本体
 - 最新稳定版：**v2026.07.2**（构建 2026-10-13）。

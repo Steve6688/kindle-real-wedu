@@ -1,19 +1,8 @@
--- wereadshelf.koplugin — "Real微读" for SimpleUI: 3-tab bottom bar
--- (发现 / 书架 / 我) + 4-column cover grid, backed by weread.koplugin's local
--- shelf cache. Does not modify weread or SimpleUI files.
+-- wereadshelf.koplugin — "Real微读": standalone WeRead-style home for KOReader
+-- (发现 / 书架 / 我 with its own bottom bar) + 4-column cover grid, backed by
+-- weread.koplugin's local shelf cache. Does not modify weread files and does
+-- not need (or touch) SimpleUI (removed in 0.3.7).
 --
--- SimpleUI 2.7.5 extension points used (official, documented):
---   QA.register(descriptor)            features/sui_quickactions.lua:23-53
---     get_icon(id) per render          features/sui_quickactions.lua:1913-1941
---   external QA ids accepted as tabs   infra/sui_config.lua:296-326 loadTabConfig
---   BarInjection.register(desc)        infra/sui_core.lua:1066-1097
---     -> SimpleUI wraps our widget with its bar  infra/sui_patches.lua:1796-2025
---   navpager arrows call onPrevPage/onNextPage on the top widget with page_num
---                                      screens/sui_bottombar.lua:1059-1079, 1136, 1195
---   Tab preset (only on explicit user action, with backup):
---     Config.saveTabConfig             infra/sui_config.lua:327-330 ("simpleui_bar_tabs")
---     Config.saveNavbarMode            infra/sui_config.lua:346-350 ("simpleui_bar_mode": icons)
---     "simpleui_bar_navpager_enabled"  infra/sui_config.lua:2841 (max 4 tabs, :109)
 -- weread 1.6.0 entry points used (public methods on the plugin instance,
 -- mixed in at weread main.lua:222-233):
 --   openBookshelf()   main.lua:33
@@ -34,17 +23,9 @@ local FastDL = require("wereadshelf_fastdl")
 local Layout = require("wereadshelf_layout")
 local ShelfGrid -- lazy (pulls in UI widgets)
 
-local QA_ID       = "wereadshelf_open"     -- 书架 (id kept from v0.1 so existing tabs keep working)
+local QA_ID       = "wereadshelf_open"     -- 书架 (tab id)
 local QA_DISCOVER = "wereadshelf_discover" -- 发现
 local QA_ME       = "wereadshelf_me"       -- 我
-local BI_ID       = "wereadshelf_grid"
-
-local PRESET_KEYS = { "simpleui_bar_tabs", "simpleui_bar_mode", "simpleui_bar_navpager_enabled" }
-local PRESET = {
-    simpleui_bar_tabs = { QA_DISCOVER, QA_ID, QA_ME },
-    simpleui_bar_mode = "icons",
-    simpleui_bar_navpager_enabled = false, -- v0.3.6: no ‹ › arrows; swipe / page keys still turn pages
-}
 
 local WeReadShelf = WidgetContainer:extend{
     name = "wereadshelf",
@@ -75,7 +56,7 @@ local function S() return WeReadShelf._settings_override or settings() end
 local function on(key) return S():readSetting(key) ~= false end
 WeReadShelf.isOn = on
 WeReadShelf.ENTER_TEXT = "进入 Real微读"
-WeReadShelf.VERSION = "0.3.6"
+WeReadShelf.VERSION = "0.3.7"
 
 -- Put 「进入 Real微读」 at the top of KOReader's ☰ (main) menu tab instead of
 -- after Exit (items missing from the order table are appended at the end).
@@ -90,7 +71,6 @@ local function pin_menu_entry()
     end
 end
 
--- Solid icon variant = selected state; see icon_for below.
 local current_grid, current_page, active_tab
 local close_pages, ui_icons, call_weread -- defined further below
 
@@ -100,10 +80,6 @@ function WeReadShelf:init()
     if self.ui and self.ui.menu then
         self.ui.menu:registerToMainMenu(self)
     end
-    self:registerSimpleUI()
-    pcall(WeReadShelf.restorePrunedTabs)
-    -- SimpleUI may be loaded after us (plugin load order); retry once later.
-    UIManager:nextTick(function() self:registerSimpleUI() end)
     -- Reading menu (opt-in setting "reader_menu"; on with 微信读书模式).
     if self.ui and self.ui.document and on("reader_menu") then
         self:hookReader()
@@ -111,12 +87,11 @@ function WeReadShelf:init()
     -- v0.3.5: Real微读 is always on (no toggle, no setup step). Every time the file manager comes up (KOReader start *and* after a book
     -- is closed — ReaderUI:onClose/onHome rebuild the FileManager, which
     -- re-inits plugins) we put the shelf on top, so the user never lands on
-    -- the SimpleUI / file browser screen. 「返回 KOReader」 pauses this for the
+    -- the file browser screen. 「返回 KOReader」 pauses this for the
     -- current session only (Data._paused); any re-entry clears the pause.
     local in_fm = self.ui and not self.ui.document
     if in_fm then
         Data._startup_done = true
-        pcall(WeReadShelf.firstRunSetup)
         if WeReadShelf.shouldAutoEnter() then
             UIManager:nextTick(function() WeReadShelf.showGrid() end)
             if UIManager.scheduleIn then
@@ -130,81 +105,13 @@ function WeReadShelf:init()
         local ok, e = pcall(FastDL.install)
         if not ok then logger.warn("wereadshelf: fast download not installed:", e) end
     end
-    pcall(WeReadShelf.migrateNav036)
-end
-
--- v0.3.6: bottom bar is only 发现 / 书架 / 我 (no ‹ › page arrows). Users set
--- up by 0.3.5 get the arrows switched off once; the original value stays in
--- the 0.3.5 backup, so 恢复 SimpleUI 原设置 still restores it.
-function WeReadShelf.migrateNav036()
-    local s = S()
-    if not s:readSetting("setup_done") or s:readSetting("nav_036") then return false end
-    local Store, Config = package.loaded["infra/sui_store"], package.loaded["infra/sui_config"]
-    if type(Store) ~= "table" or type(Config) ~= "table" then return false end
-    Store:set("simpleui_bar_navpager_enabled", false)
-    if type(Config.invalidateTabsCache) == "function" then Config.invalidateTabsCache() end
-    s:saveSetting("nav_036", true); s:flush()
-    return true
 end
 
 function WeReadShelf.shouldAutoEnter()
     return not Data._paused -- 返回 KOReader pauses only until next start / re-entry
 end
 
--- First start with SimpleUI installed: set its bar to 发现/书架/我 once
--- (backed up; 更多设置 → 恢复 SimpleUI 原设置 undoes it). Without SimpleUI,
--- Real微读 draws its own bottom bar (wereadshelf_ui.bottom_nav).
-local sui_modules
-function WeReadShelf.firstRunSetup()
-    local s = S()
-    if s:readSetting("setup_done") then return false end
-    if not sui_modules() then return false end
-    local ok = WeReadShelf.applyPreset()
-    if ok then
-        WeReadShelf.applyLandingDefaults()
-        s:saveSetting("setup_done", true); s:flush()
-    end
-    return ok
-end
-
--- SimpleUI's own first run would put its Home Screen (plus a "Choose your
--- initial layout" onboarding card) in front of Real微读, on start and after
--- closing a book. We hand both landings to the file browser, where Real微读
--- opens on top. Values are backed up and put back by 恢复 SimpleUI 原设置.
-local LANDING = { simpleui_hs_book_close_target = "library", simpleui_onboarding_done = true }
-function WeReadShelf.applyLandingDefaults()
-    local Store = sui_modules()
-    if not Store then return false end
-    local s = S()
-    local b = s:readSetting("landing_backup")
-    if type(b) ~= "table" then
-        b = { _saved = true }
-        for k in pairs(LANDING) do b[k] = Store:get(k) end
-        local G = rawget(_G, "G_reader_settings")
-        if G then b.start_with = G:readSetting("start_with") end
-        s:saveSetting("landing_backup", b)
-    end
-    for k, v in pairs(LANDING) do Store:set(k, v) end
-    local G = rawget(_G, "G_reader_settings")
-    if G and G:readSetting("start_with") == "homescreen_simpleui" then G:saveSetting("start_with", "filemanager") end
-    return true
-end
-
-function WeReadShelf.restoreLandingDefaults()
-    local Store = sui_modules()
-    local s = S()
-    local b = s:readSetting("landing_backup")
-    if not Store or type(b) ~= "table" then return false end
-    for k in pairs(LANDING) do
-        if b[k] == nil then Store:del(k) else Store:set(k, b[k]) end
-    end
-    local G = rawget(_G, "G_reader_settings")
-    if G and b.start_with then G:saveSetting("start_with", b.start_with) end
-    s:delSetting("landing_backup")
-    return true
-end
-
--- Something (e.g. SimpleUI's Home Screen) may still be shown after our first
+-- Something (e.g. a stale SimpleUI Home Screen) may still be shown after our first
 -- tick; check again shortly and bring the shelf back to the front.
 local function is_ours(w)
     return w and (w.name == "wereadshelf_grid" or w.name == "wereadshelf_discover" or w.name == "wereadshelf_me")
@@ -262,139 +169,6 @@ function WeReadShelf.leaveToKOReader()
     info("已返回 KOReader。\n再次进入：KOReader 菜单 ☰ 第一项「进入 Real微读」，或手势「打开 Real微读」；下次启动自动进入。")
 end
 
--- Solid icon variant = selected state (UI-SPEC: 选中态换实心图标). SimpleUI's
--- own plugin.active_action stayed "home" for our injected widgets in the box
--- emulator, so we track it ourselves: the tab whose page is open is selected.
-
-local function icon_for(base, id_self)
-    return function(_id)
-        if not plugin_dir then return nil end
-        local on = active_tab == id_self
-        return plugin_dir .. "/icons/" .. base .. (on and "_active" or "") .. ".svg"
-    end
-end
-
-function WeReadShelf:registerSimpleUI() return WeReadShelf.registerSimpleUIStatic() end
-
-function WeReadShelf.registerSimpleUIStatic()
-    local QA = package.loaded["features/sui_quickactions"]
-    if type(QA) ~= "table" or type(QA.register) ~= "function" then return false end
-    local descs = {
-        { id = QA_ID, label = "Real微读", base = "tab_shelf",
-          execute = function() WeReadShelf.showGrid() end },
-        { id = QA_DISCOVER, label = "发现", base = "tab_discover",
-          execute = function() WeReadShelf.showDiscover() end },
-        { id = QA_ME, label = "我", base = "tab_me",
-          execute = function() WeReadShelf.showMe() end },
-    }
-    local any_new = false
-    for _, d in ipairs(descs) do
-        if not (type(QA.isRegistered) == "function" and QA.isRegistered(d.id)) then
-            local ok, err = pcall(QA.register, {
-                id = d.id, label = d.label,
-                icon = plugin_dir and (plugin_dir .. "/icons/" .. d.base .. ".svg") or nil,
-                get_icon = icon_for(d.base, d.id),
-                is_in_place = true,
-                is_async_in_place = true, -- our widgets outlive execute()
-                execute = function(_ctx) d.execute() end,
-            })
-            if ok then any_new = true else logger.warn("wereadshelf: QA.register failed:", d.id, err) end
-        end
-    end
-    local UI = package.loaded["infra/sui_core"]
-    if type(UI) == "table" and type(UI.BarInjection) == "table" and type(UI.BarInjection.register) == "function" then
-        -- One descriptor per page widget. The injected bar is built with the
-        -- *previous* tab active (sui_patches.lua:2003-2011); active_action_id
-        -- only updates the FM's bar (:1873-1886), so on_inject also marks our
-        -- tab active on our own bar via Bottombar.setActiveTab
-        -- (screens/sui_bottombar.lua:937-959).
-        for _, b in ipairs({
-            { name = BI_ID, tab = QA_ID, pageable = true },
-            { name = "wereadshelf_discover", tab = QA_DISCOVER, pageable = false },
-            { name = "wereadshelf_me", tab = QA_ME, pageable = false },
-        }) do
-            pcall(UI.BarInjection.register, {
-                id = b.name, widget_name = b.name, active_action_id = b.tab, is_pageable = b.pageable,
-                on_inject = function(widget, ctx)
-                    local BB = package.loaded["screens/sui_bottombar"]
-                    if type(BB) == "table" and type(BB.setActiveTab) == "function" then
-                        pcall(BB.setActiveTab, widget, b.tab, ctx and ctx.tabs)
-                    end
-                    if type(widget._syncBar) == "function" then pcall(widget._syncBar, widget) end
-                end,
-            })
-        end
-    end
-    if any_new then
-        -- Tabs referencing our ids may have been dropped from the cached tab
-        -- list if SimpleUI read its config before we registered.
-        local Config = package.loaded["infra/sui_config"]
-        if type(Config) == "table" and type(Config.invalidateTabsCache) == "function" then
-            pcall(Config.invalidateTabsCache)
-        end
-    end
-    return true
-end
-
--- Preset (explicit, reversible) ----------------------------------------------
-
-sui_modules = function()
-    local Store = package.loaded["infra/sui_store"]
-    local Config = package.loaded["infra/sui_config"]
-    if type(Store) ~= "table" or type(Config) ~= "table" then return nil end
-    return Store, Config
-end
-
--- BUG-03: apply and restore share one write path. Tabs / bar mode go through
--- SimpleUI's own setters, which also drop their caches (sui_config.lua:328-331,
--- 347-350); SUISettings:set(k, nil) deletes the key (sui_settings.lua:130,
--- luasettings.lua:102). Tables are copied so SimpleUI never holds our constant.
-local function copy_list(t)
-    if type(t) ~= "table" then return t end
-    local c = {}; for i, v in ipairs(t) do c[i] = v end; return c
-end
-local function write_sui(Store, Config, vals)
-    Config.saveTabConfig(copy_list(vals.simpleui_bar_tabs))
-    Config.saveNavbarMode(vals.simpleui_bar_mode)
-    if vals.simpleui_bar_navpager_enabled == nil then Store:del("simpleui_bar_navpager_enabled")
-    else Store:set("simpleui_bar_navpager_enabled", vals.simpleui_bar_navpager_enabled) end
-    if type(Config.invalidateTabsCache) == "function" then Config.invalidateTabsCache() end
-end
-
-function WeReadShelf.applyPreset()
-    local Store, Config = sui_modules()
-    if not Store then return false, "SimpleUI 未加载" end
-    local s = S()
-    if not s:readSetting("preset_backup") then
-        local backup = { _saved = true }
-        for _, k in ipairs(PRESET_KEYS) do backup[k] = copy_list(Store:get(k)) end
-        backup.open_on_start = s:isTrue("open_on_start")
-        s:saveSetting("preset_backup", backup)
-    end
-    write_sui(Store, Config, PRESET)
-    s:saveSetting("open_on_start", true)
-    s:flush()
-    return true
-end
-
-function WeReadShelf.restorePreset()
-    local Store, Config = sui_modules()
-    if not Store then return false, "SimpleUI 未加载" end
-    local s = S()
-    local b = s:readSetting("preset_backup")
-    if type(b) ~= "table" then return false, "没有可恢复的备份（从未应用过预设）" end
-    write_sui(Store, Config, b)
-    s:saveSetting("open_on_start", b.open_on_start == true)
-    s:delSetting("preset_backup")
-    s:flush()
-    return true
-end
-
-local function ask_restart(text)
-    -- UIManager:askForRestart shows its own confirm box (frontend/ui/uimanager.lua:1628)
-    UIManager:askForRestart(text .. "需要重启 KOReader 才能完整生效。")
-end
-
 function WeReadShelf:addToMainMenu(menu_items)
     -- v0.3.4: one obvious top-level entry (first page of the KOReader menu).
     local ui = self.ui
@@ -439,74 +213,11 @@ end
 
 function WeReadShelf.toggleSetting(key)
     S():saveSetting(key, not on(key)); S():flush()
-    if key == "reader_menu" then info("已保存，下次打开书时生效。") end
-end
-
--- 微信读书模式 = SimpleUI preset (with backup) + reading menu + open on start.
-function WeReadShelf.applyWeChatMode()
-    local ok, e = WeReadShelf.applyPreset()
-    if not ok then return false, e end
-    Data._paused = false
-    local s = S()
-    local b = s:readSetting("preset_backup")
-    if type(b) == "table" and b.reader_menu == nil then
-        b.reader_menu = s:isTrue("reader_menu"); s:saveSetting("preset_backup", b)
+    if current_page and active_tab == QA_ME and current_page.refresh then
+        current_page.rows = WeReadShelf.moreSettingsItems() -- update ✓ marks in place
+        pcall(current_page.refresh, current_page)
     end
-    s:saveSetting("reader_menu", true)
-    s:flush()
-    return true
-end
-
--- 一键回原生: undo everything this plugin changed. SimpleUI keys come back
--- from the backup taken before the first change; our own switches go back to
--- their pre-mode values (default off). Book-level font settings changed from
--- the 字体 panel are KOReader's per-book settings and are kept.
--- Returns true | false, reason. BUG-02: without a backup nothing was changed
--- by us, so nothing is touched (the user's own switches stay as they are).
-WeReadShelf.NO_BACKUP = "没有可恢复的备份：从未开启过微信读书模式，设置未改动。"
-function WeReadShelf.backToNative()
-    local s = S()
-    local b = s:readSetting("preset_backup")
-    if type(b) ~= "table" then return false, WeReadShelf.NO_BACKUP end
-    local reader_menu = b.reader_menu == true
-    local ok, e = WeReadShelf.restorePreset()
-    if not ok then return false, e end
-    pcall(WeReadShelf.restoreLandingDefaults)
-    s:saveSetting("reader_menu", reader_menu)
-    s:flush()
-    close_pages()
-    return true
-end
-
-local function back_to_native_then(after)
-    local ok, e = WeReadShelf.backToNative()
-    if ok then after() else info(tostring(e)) end
-end
-
-function WeReadShelf.confirmWeChatMode()
-    local ConfirmBox = require("ui/widget/confirmbox")
-    UIManager:show(ConfirmBox:new{
-        text = "将开启微信读书模式（先备份，可用「一键回原生」完全恢复）：\n"
-            .. "• SimpleUI 底栏 Tab = 发现、书架、我；仅图标；底栏翻页键\n"
-            .. "• 启动时打开书架\n• 阅读时点屏幕中部呼出微信读书风格菜单\n"
-            .. "不修改 SimpleUI 的其它设置，也不修改 KOReader 的设置。",
-        ok_text = "开启",
-        ok_callback = function()
-            local ok, e = WeReadShelf.applyWeChatMode()
-            if ok then ask_restart("已开启。") else info("未开启：" .. tostring(e)) end
-        end,
-    })
-end
-
-function WeReadShelf.confirmBackToNative()
-    local ConfirmBox = require("ui/widget/confirmbox")
-    UIManager:show(ConfirmBox:new{
-        text = "恢复 SimpleUI 底栏原来的设置（安装 Real微读之前的样子）？\n书里的字号等阅读设置保留。",
-        ok_text = "恢复并重启",
-        ok_callback = function()
-            back_to_native_then(function() UIManager:askForRestart("已恢复。") end)
-        end,
-    })
+    if key == "reader_menu" then info("已保存，下次打开书时生效。") end
 end
 
 -- Same as KOReader's own 退出 (frontend/ui/elements/common_exit_menu_table.lua:8-19);
@@ -525,10 +236,10 @@ function WeReadShelf.confirmExitToKindle()
     })
 end
 
--- 0.3.5 name kept for callers; everything now lives in 更多设置.
+-- Older names kept for callers; the same items are the 「我」 rows.
 function WeReadShelf.showSettingsDialog() return WeReadShelf.showMoreSettings() end
 
--- 更多设置: every secondary feature, one level below 「我」 (nothing removed).
+-- 「我」 rows (0.3.7). Also offered as a dialog for the KOReader tools menu.
 function WeReadShelf.moreSettingsItems()
     local weread = Data.find_weread()
     local function mark(k) return on(k) and "✓ " or "　" end
@@ -549,8 +260,8 @@ function WeReadShelf.moreSettingsItems()
             WeReadShelf.toggleSetting("fast_download")
             info("已保存，重启 KOReader 后生效。") end },
         { text = "KOReader 设置（完整菜单）", fn = function() WeReadShelf.openKOReaderMenu() end },
-        { text = "恢复 SimpleUI 原设置…", fn = function() WeReadShelf.confirmBackToNative() end },
         { text = "退出到 Kindle…", fn = function() WeReadShelf.confirmExitToKindle() end },
+        { text = "返回 KOReader", bold = true, fn = function() WeReadShelf.leaveToKOReader() end },
     }
 end
 
@@ -618,7 +329,7 @@ function WeReadShelf.showReaderMenu(ui)
     return true
 end
 
--- Conventional launcher names (SimpleUI scanner: onShow/show/open/launch).
+-- Conventional launcher name.
 function WeReadShelf:launch() WeReadShelf.showGrid() end
 
 -- Public API -----------------------------------------------------------
@@ -774,10 +485,8 @@ function WeReadShelf.showMe()
         stats = stats(),
         account_sub = Data.is_logged_in(weread) and "已登录 · 微信读书" or "未登录",
         footer = "Real微读 " .. (WeReadShelf.VERSION or ""),
-        rows = {
-            { text = "更多设置", fn = function() WeReadShelf.showMoreSettings() end },
-            { text = "返回 KOReader", fn = function() WeReadShelf.leaveToKOReader() end },
-        },
+        -- v0.3.7: every item sits directly on 「我」 (no 更多设置 level)
+        rows = WeReadShelf.moreSettingsItems(),
         on_nav_discover = function() WeReadShelf.showDiscover() end,
         on_nav_shelf = function() WeReadShelf.showGrid() end,
         on_nav_me = function() WeReadShelf.showMe() end,
@@ -837,6 +546,7 @@ function WeReadShelf.showGrid()
         current_grid = nil
     end
     close_pages()
+    ui_icons() -- the grid's own bottom bar uses wereadshelf_ui icons
     local grid
     grid = ShelfGrid:new{
         books = books,
@@ -909,62 +619,6 @@ function WeReadShelf.showShelfStatic()
 end
 
 function WeReadShelf:showShelf() WeReadShelf.showGrid() end
-
--- IMPORTANT — SimpleUI load-order workaround (no SimpleUI file is changed):
--- simpleui.koplugin's init() calls Config.sanitizeQASlots()
--- (simpleui main.lua:937-943 -> features/sui_quickactions.lua:1403-1422),
--- which *permanently* removes tab ids that QA.isRegistered() does not know
--- yet. Plugins are initialised in path order (frontend/pluginloader.lua:289),
--- so SimpleUI's init runs before ours and would drop our tabs on every boot.
--- main.lua files are all dofile()'d before any init(), and SimpleUI's
--- main.lua already required infra/sui_store (simpleui main.lua:24), so we
--- snapshot the user's own tab list now and, once our ids are registered in
--- init(), put back exactly that list if SimpleUI pruned our ids from it.
-do
-    local Store = package.loaded["infra/sui_store"]
-    if type(Store) == "table" and type(Store.get) == "function" then
-        local ok, tabs = pcall(Store.get, Store, "simpleui_bar_tabs")
-        if ok and type(tabs) == "table" then
-            local copy = {}
-            for i, id in ipairs(tabs) do copy[i] = id end
-            Data._tabs_snapshot = copy
-        end
-    end
-end
-
-local OUR_IDS = { [QA_ID] = true, [QA_DISCOVER] = true, [QA_ME] = true }
-
--- Returns the list to write back, or nil when nothing of ours was pruned.
-function WeReadShelf.tabsToRestore(snapshot, current, is_valid)
-    if type(snapshot) ~= "table" then return nil end
-    local cur = {}
-    for _, id in ipairs(type(current) == "table" and current or {}) do cur[id] = true end
-    local pruned = false
-    for _, id in ipairs(snapshot) do
-        if OUR_IDS[id] and not cur[id] then pruned = true end
-    end
-    if not pruned then return nil end
-    local out = {}
-    for _, id in ipairs(snapshot) do
-        if OUR_IDS[id] or cur[id] or (is_valid and is_valid(id)) then out[#out + 1] = id end
-    end
-    return out
-end
-
-function WeReadShelf.restorePrunedTabs()
-    local snap = Data._tabs_snapshot
-    Data._tabs_snapshot = nil -- once per process
-    local Store, Config = sui_modules()
-    if not Store or not snap then return false end
-    local QA = package.loaded["features/sui_quickactions"]
-    local out = WeReadShelf.tabsToRestore(snap, Store:get("simpleui_bar_tabs"),
-        QA and QA.isRegistered and function(id) return QA.isRegistered(id) end)
-    if not out then return false end
-    Store:set("simpleui_bar_tabs", out)
-    if type(Config.invalidateTabsCache) == "function" then Config.invalidateTabsCache() end
-    logger.info("wereadshelf: restored SimpleUI tabs pruned before our registration:", table.concat(out, ","))
-    return true
-end
 
 WeReadShelf._Layout = Layout
 return WeReadShelf

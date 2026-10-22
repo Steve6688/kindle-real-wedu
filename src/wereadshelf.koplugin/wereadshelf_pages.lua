@@ -1,6 +1,6 @@
 -- wereadshelf_pages.lua — 「发现」and「我」full-screen tab pages.
--- SimpleUI attaches its bottom bar to them through BarInjection (registered
--- in main.lua; simpleui infra/sui_core.lua:1066-1135). Content is only what
+-- Each page draws Real微读's own bottom bar (wereadshelf_ui.bottom_nav).
+-- Content is only what
 -- weread 1.6.0 really provides; see main.lua for the data sources.
 local CenterContainer = require("ui/widget/container/centercontainer")
 local Device          = require("device")
@@ -23,7 +23,7 @@ local Page = InputContainer:extend{ covers_fullscreen = true }
 function Page:init()
     self.W = Screen:getWidth()
     self.top, self.avail = U.content_area()
-    self.own_nav = type(package.loaded["infra/sui_core"]) ~= "table"
+    self.own_nav = true -- v0.3.7: Real微读 always draws its own bar
     self.nav_h = self.own_nav and U.nav_height() or 0
     self.avail = self.avail - self.nav_h
     self.dimen = rect(0, 0, self.W, Screen:getHeight())

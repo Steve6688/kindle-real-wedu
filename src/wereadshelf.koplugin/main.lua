@@ -30,6 +30,7 @@ local logger          = require("logger")
 -- Must be required at top level: KOReader only puts the plugin dir on
 -- package.path while dofile()'ing main.lua (frontend/pluginloader.lua:242-244).
 local Data   = require("wereadshelf_data")
+local FastDL = require("wereadshelf_fastdl")
 local Layout = require("wereadshelf_layout")
 local ShelfGrid -- lazy (pulls in UI widgets)
 
@@ -42,7 +43,7 @@ local PRESET_KEYS = { "simpleui_bar_tabs", "simpleui_bar_mode", "simpleui_bar_na
 local PRESET = {
     simpleui_bar_tabs = { QA_DISCOVER, QA_ID, QA_ME },
     simpleui_bar_mode = "icons",
-    simpleui_bar_navpager_enabled = true,
+    simpleui_bar_navpager_enabled = false, -- v0.3.6: no ‹ › arrows; swipe / page keys still turn pages
 }
 
 local WeReadShelf = WidgetContainer:extend{
@@ -74,6 +75,7 @@ local function S() return WeReadShelf._settings_override or settings() end
 local function on(key) return S():readSetting(key) ~= false end
 WeReadShelf.isOn = on
 WeReadShelf.ENTER_TEXT = "进入 Real微读"
+WeReadShelf.VERSION = "0.3.6"
 
 -- Put 「进入 Real微读」 at the top of KOReader's ☰ (main) menu tab instead of
 -- after Exit (items missing from the order table are appended at the end).
@@ -90,7 +92,7 @@ end
 
 -- Solid icon variant = selected state; see icon_for below.
 local current_grid, current_page, active_tab
-local close_pages, ui_icons -- defined in the Pages section below
+local close_pages, ui_icons, call_weread -- defined further below
 
 function WeReadShelf:init()
     plugin_dir = self.path or plugin_dir
@@ -123,6 +125,26 @@ function WeReadShelf:init()
         end
     end
     self:onDispatcherRegisterActions()
+    -- v0.3.6 faster weread downloads (default ON; 更多设置 → 快速下载).
+    if on("fast_download") then
+        local ok, e = pcall(FastDL.install)
+        if not ok then logger.warn("wereadshelf: fast download not installed:", e) end
+    end
+    pcall(WeReadShelf.migrateNav036)
+end
+
+-- v0.3.6: bottom bar is only 发现 / 书架 / 我 (no ‹ › page arrows). Users set
+-- up by 0.3.5 get the arrows switched off once; the original value stays in
+-- the 0.3.5 backup, so 恢复 SimpleUI 原设置 still restores it.
+function WeReadShelf.migrateNav036()
+    local s = S()
+    if not s:readSetting("setup_done") or s:readSetting("nav_036") then return false end
+    local Store, Config = package.loaded["infra/sui_store"], package.loaded["infra/sui_config"]
+    if type(Store) ~= "table" or type(Config) ~= "table" then return false end
+    Store:set("simpleui_bar_navpager_enabled", false)
+    if type(Config.invalidateTabsCache) == "function" then Config.invalidateTabsCache() end
+    s:saveSetting("nav_036", true); s:flush()
+    return true
 end
 
 function WeReadShelf.shouldAutoEnter()
@@ -189,10 +211,13 @@ local function is_ours(w)
 end
 function WeReadShelf.ensureOnTop()
     if Data._paused then return false end
+    local RUI = package.loaded["apps/reader/readerui"]
+    if RUI and RUI.instance then return false end -- a book is open: never cover it
     local st = UIManager._window_stack
     local top = type(st) == "table" and st[#st] and st[#st].widget
     if type(top) ~= "table" or is_ours(top) then return false end
-    if top.name == "filemanager" or top.name == "sui_homescreen" or (top.name or ""):find("^sui_") then
+    local nm = tostring(top.name or "")
+    if nm == "filemanager" or nm == "homescreen" or nm:find("^sui_") then
         WeReadShelf.showGrid(); return true
     end
     return false
@@ -500,35 +525,57 @@ function WeReadShelf.confirmExitToKindle()
     })
 end
 
-function WeReadShelf.showSettingsDialog()
-    local ButtonDialog = require("ui/widget/buttondialog")
-    local dlg
-    local function btn(text, fn) return { { text = text, callback = function() UIManager:close(dlg); fn() end } } end
-    dlg = ButtonDialog:new{
-        title = "阅读设置",
-        buttons = {
-            btn((on("reader_menu") and "✓ " or "　") .. "Real微读阅读菜单", function() WeReadShelf.toggleSetting("reader_menu") end),
-            btn("更多设置…", function() WeReadShelf.showMoreSettings() end),
-        },
+-- 0.3.5 name kept for callers; everything now lives in 更多设置.
+function WeReadShelf.showSettingsDialog() return WeReadShelf.showMoreSettings() end
+
+-- 更多设置: every secondary feature, one level below 「我」 (nothing removed).
+function WeReadShelf.moreSettingsItems()
+    local weread = Data.find_weread()
+    local function mark(k) return on(k) and "✓ " or "　" end
+    return {
+        { text = "阅读时长统计", fn = function() call_weread("showReadStats") end },
+        { text = "我的笔记", fn = function()
+            info("weread 1.6.0 没有「全部笔记」列表接口。\n打开一本书后：阅读菜单「更多」→ 书签列表，"
+                .. "或 weread 菜单「划线和想法管理」查看该书笔记。") end },
+        { text = "书架同步 · 登录与管理", fn = function() WeReadShelf.openWereadManagement() end },
+        { text = "刷新本周阅读数据", fn = function()
+            if not WeReadShelf.refreshStats(weread, function(good)
+                local c = WeReadShelf.statsCache()
+                info(good and ("本周阅读 " .. tostring(c.week_min or 0) .. " 分钟") or "刷新失败（未联网或服务器无数据）")
+            end, false) then info(Data.MESSAGES[Data.ERR_NO_PLUGIN]) end
+        end },
+        { text = mark("reader_menu") .. "Real微读阅读菜单", fn = function() WeReadShelf.toggleSetting("reader_menu") end },
+        { text = mark("fast_download") .. "快速下载（3 章并行）", fn = function()
+            WeReadShelf.toggleSetting("fast_download")
+            info("已保存，重启 KOReader 后生效。") end },
+        { text = "KOReader 设置（完整菜单）", fn = function() WeReadShelf.openKOReaderMenu() end },
+        { text = "恢复 SimpleUI 原设置…", fn = function() WeReadShelf.confirmBackToNative() end },
+        { text = "退出到 Kindle…", fn = function() WeReadShelf.confirmExitToKindle() end },
     }
-    UIManager:show(dlg)
 end
 
--- Rarely needed things, kept off the main surface.
 function WeReadShelf.showMoreSettings()
     local ButtonDialog = require("ui/widget/buttondialog")
     local dlg
-    local function btn(text, fn) return { { text = text, callback = function() UIManager:close(dlg); fn() end } } end
-    dlg = ButtonDialog:new{
-        title = "更多设置",
-        buttons = {
-            btn("登录、同步与管理书架（微信读书）", function() WeReadShelf.openWereadManagement() end),
-            btn("恢复 SimpleUI 原设置…", function() WeReadShelf.confirmBackToNative() end),
-            btn("退出到 Kindle…", function() WeReadShelf.confirmExitToKindle() end),
-            btn("关闭", function() end),
-        },
-    }
+    local buttons = {}
+    for _, it in ipairs(WeReadShelf.moreSettingsItems()) do
+        buttons[#buttons + 1] = { { text = it.text, align = "left", callback = function() UIManager:close(dlg); it.fn() end } }
+    end
+    buttons[#buttons + 1] = { { text = "关闭", callback = function() UIManager:close(dlg) end } }
+    dlg = ButtonDialog:new{ title = "更多设置", buttons = buttons }
     UIManager:show(dlg)
+    return dlg
+end
+
+-- KOReader's own full menu, on top of the file manager (our pages close).
+function WeReadShelf.openKOReaderMenu()
+    Data._paused = true
+    close_pages()
+    local FM = package.loaded["apps/filemanager/filemanager"]
+    local fm = FM and FM.instance
+    if fm and fm.menu and type(fm.menu.onShowMenu) == "function" then
+        UIManager:nextTick(function() pcall(fm.menu.onShowMenu, fm.menu) end)
+    end
 end
 
 -- Reader integration -----------------------------------------------------------
@@ -604,7 +651,7 @@ local function show_error(weread, err)
     end
 end
 
-local function call_weread(method, ...)
+call_weread = function(method, ...)
     local weread = Data.find_weread()
     if not weread then info(Data.MESSAGES[Data.ERR_NO_PLUGIN]); return false end
     if type(weread[method]) ~= "function" then
@@ -725,14 +772,11 @@ function WeReadShelf.showMe()
     page = Pages.Me:new{
         account_name = Data.is_logged_in(weread) and (account.name or "") or "",
         stats = stats(),
+        account_sub = Data.is_logged_in(weread) and "已登录 · 微信读书" or "未登录",
+        footer = "Real微读 " .. (WeReadShelf.VERSION or ""),
         rows = {
-            { text = "阅读时长统计", fn = function() call_weread("showReadStats") end },   -- read_report.lua:238
-            { text = "我的笔记", fn = function()
-                info("weread 1.6.0 没有「全部笔记」列表接口。\n打开一本书后：阅读菜单「更多」→ 书签列表，"
-                    .. "或 weread 菜单「划线和想法管理」查看该书笔记。") end },
-            { text = "书架同步", fn = function() call_weread("openBookshelf") end },        -- main.lua:33
-            { text = "阅读设置", fn = function() WeReadShelf.showSettingsDialog() end },
-            { text = "返回 KOReader", bold = true, fn = function() WeReadShelf.leaveToKOReader() end },
+            { text = "更多设置", fn = function() WeReadShelf.showMoreSettings() end },
+            { text = "返回 KOReader", fn = function() WeReadShelf.leaveToKOReader() end },
         },
         on_nav_discover = function() WeReadShelf.showDiscover() end,
         on_nav_shelf = function() WeReadShelf.showGrid() end,
@@ -748,13 +792,6 @@ function WeReadShelf.showMe()
         end,
     }
     show_page(page, QA_ME)
-    -- auto refresh when online and the cache is older than 30 min (no prompt when offline)
-    local c = WeReadShelf.statsCache()
-    if not c.at or os.time() - c.at > 1800 then
-        WeReadShelf.refreshStats(weread, function()
-            if current_page == page then page.stats = stats(); page:refresh() end
-        end, true)
-    end
     return page
 end
 

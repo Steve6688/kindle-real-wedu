@@ -43,6 +43,6 @@ rm -f $K/lib/koreader/settings/wereadshelf.lua # fresh install: no plugin settin
 OUT="${WSPREV_DIR:-$KW/preview}"; mkdir -p "$OUT"; cd $K/lib/koreader
 for mode in ${WSPREV_MODES:-shelf shelf2 discover me reader font}; do
   SDL_VIDEODRIVER=dummy EMULATE_READER_W=1236 EMULATE_READER_H=1648 EMULATE_READER_DPI=300 \
-  WSPREV_MODE=$mode WSPREV_OUT="$OUT/$mode-1236x1648.png" timeout 60 ./luajit reader.lua -d $R >/dev/null 2>&1 || true
+  WSPREV_WEREAD="$KW/vendor/weread.koplugin" WSPREV_MODE=$mode WSPREV_OUT="$OUT/$mode-1236x1648.png" timeout 60 ./luajit reader.lua -d $R >/dev/null 2>&1 || true
 done
 ls -la "$OUT"

@@ -35,8 +35,12 @@ local RM = InputContainer:extend{
     on_back = nil,         -- function() back to shelf
     weread = nil,          -- weread plugin instance (optional)
     font_open = false,
+    sheet_open = false,    -- v0.3.6 阅读设置 bottom sheet (字号 / 亮度·暖光 / 翻页方式)
 }
+local Blitbuffer = require("ffi/blitbuffer")
+local LABEL_GRAY = Blitbuffer.Color8(0x8C) -- UI-LAYOUT: one gray for labels
 
+local function send_event(ui, name, ...) if ui then ui:handleEvent(Event:new(name, ...)) end end
 local function place(group, w, x, y) w.overlap_offset = { x, y }; group[#group + 1] = w; return w end
 local function rect(x, y, w, h) return Geom:new{ x = x, y = y, w = w, h = h } end
 
@@ -218,15 +222,207 @@ end
 
 function RM:_hit(r, fn) self.hits[#self.hits + 1] = { r = r, fn = fn } end
 
+-- 阅读设置 bottom sheet (UI-LAYOUT-0.3.5 §2) --------------------------------
+-- Page-turn modes map onto KOReader's own switches (ui/elements/page_turns.lua,
+-- read at gesture time by readerrolling.lua:371,555 / readerpaging.lua):
+--   点击 = taps + swipes (KOReader default), 滑动 = swipes only, 按键 = keys only.
+RM.TURN_MODES = {
+    { id = "tap",   label = "点击", tap = true,  swipe = true },
+    { id = "swipe", label = "滑动", tap = false, swipe = true },
+    { id = "key",   label = "按键", tap = false, swipe = false, needs_keys = true },
+}
+function RM.turnModes()
+    local out = {}
+    for _, t in ipairs(RM.TURN_MODES) do
+        if not t.needs_keys or (Device.hasKeys and Device:hasKeys()) then out[#out + 1] = t end
+    end
+    return out
+end
+function RM.currentTurnMode()
+    local G = rawget(_G, "G_reader_settings")
+    local tap = not (G and G:isTrue("page_turns_disable_tap"))
+    local swipe = not (G and G:isTrue("page_turns_disable_swipe"))
+    if tap then return "tap" elseif swipe then return "swipe" else return "key" end
+end
+function RM:setTurnMode(id)
+    local G = rawget(_G, "G_reader_settings")
+    for _, t in ipairs(RM.TURN_MODES) do
+        if t.id == id and G then
+            G:saveSetting("page_turns_disable_tap", not t.tap)
+            G:saveSetting("page_turns_disable_swipe", not t.swipe)
+        end
+    end
+    self:refresh("ui")
+end
+
+local function powerd() return Device.getPowerDevice and Device:getPowerDevice() end
+function RM:lightValues()
+    local p = powerd()
+    local v = { has_fl = Device.hasFrontlight and Device:hasFrontlight() or false,
+        has_warm = Device.hasNaturalLight and Device:hasNaturalLight() or false }
+    if p then
+        pcall(function()
+            v.min, v.max = p.fl_min or 0, p.fl_max or 100
+            v.fl = p:frontlightIntensity()
+            if v.has_warm then v.wmin, v.wmax, v.warm = p.fl_warmth_min or 0, p.fl_warmth_max or 100, p:frontlightWarmth() end
+        end)
+    end
+    return v
+end
+function RM:setLight(kind, frac)
+    local p, v = powerd(), self:lightValues()
+    if not p then return end
+    frac = math.max(0, math.min(1, frac))
+    pcall(function()
+        if kind == "fl" and v.has_fl then p:setIntensity(math.floor(v.min + frac * (v.max - v.min) + 0.5))
+        elseif kind == "warm" and v.has_warm then p:setWarmth(math.floor(v.wmin + frac * (v.wmax - v.wmin) + 0.5)) end
+    end)
+    self:refresh("ui")
+end
+function RM:fontSize()
+    local c = self.ui and self.ui.document and self.ui.document.configurable
+    return c and tonumber(c.font_size) or nil
+end
+function RM:bumpFont(d)
+    local f = self:fontSize()
+    if not f then return end
+    send_event(self.ui, "SetFontSize", math.max(12, math.min(72, f + d)))
+    self:refresh("ui")
+end
+
+function RM:_sheet(g)
+    local W, H = self.W, self.H
+    local pad, gap = U.px(64), U.px(24)
+    -- rows: pad-top 40 + title 96 + 字号 160 + 光 2×130 + 翻页 160 + 更多 112 + 4 gaps + 24 bottom
+    local sheet_h = U.px(40 + 96 + 160 + 260 + 160 + 112 + 4 * 24 + 24)
+    local y0 = H - sheet_h
+    place(g, FrameContainer:new{ bordersize = 0, padding = 0, margin = 0, background = U.WHITE,
+        width = W, height = sheet_h, U.hspan(0) }, 0, y0)
+    place(g, U.hline(W, 2), 0, y0)
+    self.panel_rect = rect(0, y0, W, sheet_h)
+    local function label(t, x, y, h)
+        local w = U.text(t, U.px(34)); w.fgcolor = LABEL_GRAY
+        place(g, w, x, y + math.floor((h - w:getSize().h) / 2)); return w
+    end
+    local function button(t, x, y, w, h, selected, fn, px)
+        local txt = U.text(t, px or U.px(36), selected)
+        if selected then txt.fgcolor = U.WHITE end
+        place(g, FrameContainer:new{ bordersize = 2, color = U.BLACK, background = selected and U.BLACK or U.WHITE,
+            radius = U.px(12), padding = 0, margin = 0,
+            CenterContainer:new{ dimen = Geom:new{ w = w - 4, h = h - 4 }, txt } }, x, y)
+        if fn then self:_hit(rect(x, y, w, h), fn) end
+    end
+    local y = y0 + U.px(40)
+    -- title + 完成
+    local th = U.px(96)
+    local t = U.text("阅读设置", U.px(40), true)
+    place(g, t, pad, y + math.floor((th - t:getSize().h) / 2))
+    local done = U.text("完成", U.px(36))
+    place(g, done, W - pad - done:getSize().w, y + math.floor((th - done:getSize().h) / 2))
+    self:_hit(rect(W - pad - U.px(128), y, U.px(128) + pad, th), function() self:closeSheet() end)
+    y = y + th + gap
+    -- 字号
+    local rh = U.px(160)
+    label("字号", pad, y, rh)
+    local bw, bh = U.px(120), U.px(96)
+    local by = y + math.floor((rh - bh) / 2)
+    local num_w = U.px(140)
+    local x_plus = W - pad - bw
+    local x_num = x_plus - num_w
+    local x_minus = x_num - bw
+    local f = self:fontSize()
+    button("A−", x_minus, by, bw, bh, false, function() self:bumpFont(-1) end)
+    local nt = U.text(f and tostring(math.floor(f + 0.5)) or "—", U.px(44), true)
+    place(g, nt, x_num + math.floor((num_w - nt:getSize().w) / 2), by + math.floor((bh - nt:getSize().h) / 2))
+    button("A+", x_plus, by, bw, bh, false, function() self:bumpFont(1) end)
+    y = y + rh + gap
+    -- 亮度 / 暖光
+    local lv = self:lightValues()
+    local function lightrow(name, kind, enabled, frac, value_txt)
+        local h = U.px(130)
+        label(name, pad, y, h)
+        local tx, tw = pad + U.px(150), W - 2 * pad - U.px(150) - U.px(110)
+        local ty = y + math.floor((h - U.px(8)) / 2)
+        place(g, FrameContainer:new{ bordersize = 0, background = U.GRAY, padding = 0, margin = 0,
+            width = tw, height = U.px(8), U.hspan(0) }, tx, ty)
+        if enabled then
+            local fx = math.floor(tw * (frac or 0))
+            if fx > 0 then
+                place(g, FrameContainer:new{ bordersize = 0, background = U.BLACK, padding = 0, margin = 0,
+                    width = fx, height = U.px(8), U.hspan(0) }, tx, ty)
+            end
+            local kd = U.px(48)
+            place(g, FrameContainer:new{ bordersize = 0, background = U.BLACK, radius = math.floor(kd / 2),
+                padding = 0, margin = 0, width = kd, height = kd, U.hspan(0) },
+                tx + fx - math.floor(kd / 2), y + math.floor((h - kd) / 2))
+            self:_hit(rect(tx - U.px(30), y, tw + U.px(60), h), function(pos) self:setLight(kind, (pos.x - tx) / tw) end)
+        end
+        local vt = U.text(value_txt, U.px(32)); if not enabled then vt.fgcolor = LABEL_GRAY end
+        place(g, vt, W - pad - vt:getSize().w, y + math.floor((h - vt:getSize().h) / 2))
+        y = y + h
+    end
+    local function frac(v, lo, hi) if not v or not lo or not hi or hi <= lo then return 0 end return (v - lo) / (hi - lo) end
+    lightrow("亮度", "fl", lv.has_fl and lv.fl ~= nil, frac(lv.fl, lv.min, lv.max), lv.has_fl and tostring(lv.fl or "—") or "无")
+    lightrow("暖光", "warm", lv.has_warm and lv.warm ~= nil, frac(lv.warm, lv.wmin, lv.wmax),
+        lv.has_warm and tostring(lv.warm or "—") or "不支持")
+    y = y + gap
+    -- 翻页方式
+    label("翻页方式", pad, y, rh)
+    local modes = RM.turnModes()
+    local seg_w = math.max(U.px(240), math.floor((W - 2 * pad - U.px(200)) / #modes))
+    local sx = W - pad - seg_w * #modes
+    local cur = RM.currentTurnMode()
+    for i, md in ipairs(modes) do
+        button(md.label, sx + (i - 1) * seg_w, y + math.floor((rh - bh) / 2), seg_w, bh,
+            md.id == cur, function() self:setTurnMode(md.id) end)
+    end
+    y = y + rh + gap
+    -- 更多设置 ›
+    local mh = U.px(112)
+    local mt = U.text("更多设置", U.px(34))
+    place(g, mt, pad, y + math.floor((mh - mt:getSize().h) / 2))
+    local ar = U.text("›", U.px(34)); ar.fgcolor = LABEL_GRAY
+    place(g, ar, W - pad - ar:getSize().w, y + math.floor((mh - ar:getSize().h) / 2))
+    self:_hit(rect(0, y, W, mh), function() self:showMoreReading() end)
+end
+
+function RM:openSheet() self.sheet_open = true; self.font_open = false; self:refresh("ui") end
+function RM:closeSheet() self.sheet_open = false; self:refresh("ui") end
+
+-- 「更多设置」 inside a book: everything that is not 字号 / 光 / 翻页.
+function RM:showMoreReading()
+    local dlg
+    local function item(text, fn) return { { text = text, align = "left", callback = function() UIManager:close(dlg); fn() end } } end
+    dlg = ButtonDialog:new{
+        title = "更多设置",
+        buttons = {
+            item("字体、粗细、行距、边距、缩进", function()
+                if self:isRolling() then self.sheet_open = false; self.font_open = true; self:refresh("ui")
+                else self:close(); send_event(self.ui, "ShowConfigMenu") end end),
+            item("目录", function() self:showToc() end),
+            item("书签与笔记", function() self:close(); send_event(self.ui, "ShowBookmark") end),
+            item("进度跳转", function() self:showProgress() end),
+            item("搜索全书", function() self:close(); send_event(self.ui, "ShowFulltextSearchInput") end),
+            item("KOReader 阅读设置（刷新频率、旋转等）", function() self:close(); send_event(self.ui, "ShowMenu") end),
+            { { text = "关闭", callback = function() UIManager:close(dlg) end } },
+        },
+    }
+    UIManager:show(dlg)
+end
+
 function RM:_build()
     if self[1] then self[1]:free() end
     self.hits = {}
     self.panel_rect = nil
     local g = OverlapGroup:new{ dimen = Geom:new{ w = self.W, h = self.H } }
     -- UI-SPEC/ref 05-font: the font panel is shown without the top bar.
-    if not self.font_open then self:_topBar(g) end
-    if self.font_open then self:_fontPanel(g) end
-    self:_bottomBar(g)
+    if not self.font_open and not self.sheet_open then self:_topBar(g) end
+    if self.sheet_open then
+        self:_sheet(g) -- bottom sheet replaces the icon bar (UI-LAYOUT §2)
+    else
+        if self.font_open then self:_fontPanel(g) end
+        self:_bottomBar(g)
+    end
     self[1] = g
 end
 
@@ -242,9 +438,12 @@ function RM:onTap(_, ges)
         local h = self.hits[i]
         if U.inside(h.r, p.x, p.y) then h.fn(p); return true end
     end
+    if self.sheet_open and not U.inside(self.panel_rect, p.x, p.y) then
+        self:close(); return true -- tap on the page closes the sheet (partial refresh)
+    end
     if self.font_open and not U.inside(self.panel_rect, p.x, p.y) then
         self.font_open = false
-        self:refresh("full")
+        self:refresh("ui")
         return true
     end
     self:close()
@@ -252,7 +451,8 @@ function RM:onTap(_, ges)
 end
 
 function RM:close()
-    UIManager:close(self, "full") -- 刷新规则：关菜单一次全屏刷新
+    -- v0.3.6: the settings sheet closes with a partial refresh (no full flash)
+    UIManager:close(self, self.sheet_open and "ui" or "full")
 end
 function RM:onClose() self:close(); return true end
 function RM:onCloseWidget() if self[1] then self[1]:free() end end
@@ -275,12 +475,9 @@ function RM:showBrightness()
     end
 end
 function RM:toggleFont()
-    if not self:isRolling() then
-        -- PDF/DjVu/CBZ: no reflowable font settings; open KOReader's own bottom config instead
-        self:close(); send(self.ui, "ShowConfigMenu"); return
-    end
-    self.font_open = not self.font_open
-    self:refresh("full")
+    -- v0.3.6: 「A」 opens the 阅读设置 sheet (works for PDF too: 光 / 翻页);
+    -- the full font panel moved to 更多设置.
+    if self.sheet_open then self:closeSheet() else self:openSheet() end
 end
 function RM:toggleBookmark()
     send(self.ui, "ToggleBookmark")

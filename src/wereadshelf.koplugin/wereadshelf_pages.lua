@@ -195,12 +195,24 @@ function Me:build(g)
         CenterContainer:new{ dimen = Geom:new{ w = d - 4, h = d - 4 }, U.text(Logic.initial(self.account_name), U.px(60), true) } },
         m, y)
     local nick = U.text(self.account_name ~= "" and self.account_name or "未登录", U.px(44), true, W - 3 * m - d)
-    local sub = U.text("微信读书账号", U.px(28))
+    local sub = U.text(self.account_sub or "微信读书账号", U.px(28))
     local tx = m + d + U.px(36)
     local th = nick:getSize().h + U.px(10) + sub:getSize().h
     place(g, nick, tx, y + math.floor((d - th) / 2))
     place(g, sub, tx, y + math.floor((d - th) / 2) + nick:getSize().h + U.px(10))
     y = y + d + U.px(50)
+    -- v0.3.6 (ENTRY-MIN): 「我」 = account header + 2 rows; the stats card
+    -- moved to 更多设置 → 阅读时长统计. Kept behind show_stats for reuse.
+    if not self.show_stats then
+        y = y + U.px(32)
+        place(g, U.hline(W - 2 * m, 2), m, y - 2)
+        y = self:rows_paged(g, y, self.rows or {}, "_row_offset")
+        if self.footer then
+            local f = U.text(self.footer, U.px(26))
+            place(g, f, math.floor((W - f:getSize().w) / 2), self.avail - U.px(80))
+        end
+        return
+    end
     -- 数据卡: 3 equal cells, 1px vertical separators, no fill
     local s = self.stats or {}
     local cells = {

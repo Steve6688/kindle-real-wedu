@@ -163,33 +163,33 @@ reg.wereadshelf_me.execute({})
 local mp = shown[#shown]
 check("我 page shown, discover closed", getmetatable(mp).__index == Pages.Me and closed[#closed] == dp)
 check("我 account name", mp.account_name == "小明")
-check("我 weekly stats fetched (weekly mode)", _G.stats_mode == "weekly" and S:readSetting("stats_cache").week_min == 61
-    and S:readSetting("stats_cache").notes == 12)
-check("我 page refreshed after fetch", (mp.refreshed or 0) >= 1)
-check("我 rows: 5, single exit row 返回 KOReader (bold)", #mp.rows == 5 and mp.rows[5].text == "返回 KOReader" and mp.rows[5].bold)
-mp.rows[4].fn()
-local sd = shown[#shown]
-check("阅读设置: 2 items (reader menu, 更多设置)", sd.title == "阅读设置" and #sd.buttons == 2
-    and sd.buttons[1][1].text:find("Real微读阅读菜单") and sd.buttons[2][1].text == "更多设置…")
-sd.buttons[2][1].callback()
+check("v0.3.6 我 = header + 更多设置 + 返回 KOReader only", #mp.rows == 2 and mp.rows[1].text == "更多设置"
+    and mp.rows[2].text == "返回 KOReader" and not mp.show_stats and mp.footer == "Real微读 0.3.6")
+check("v0.3.6 我 does not hit the network on open", _G.stats_mode == nil)
+mp.rows[1].fn()
 local md = shown[#shown]
-check("更多设置 holds 管理/恢复/退出", md.title == "更多设置" and #md.buttons == 4
-    and md.buttons[2][1].text:find("恢复 SimpleUI"))
--- BUG-04: refresh returning nil / raising -> visible failure notice
+local function find_btn(dlg, pat)
+    for _, row in ipairs(dlg.buttons) do if row[1].text:find(pat) then return row[1] end end
+end
+check("更多设置 keeps every feature", md.title == "更多设置" and find_btn(md, "阅读时长统计") and find_btn(md, "我的笔记")
+    and find_btn(md, "书架同步") and find_btn(md, "Real微读阅读菜单") and find_btn(md, "快速下载")
+    and find_btn(md, "KOReader 设置") and find_btn(md, "恢复 SimpleUI") and find_btn(md, "退出到 Kindle"))
+find_btn(md, "阅读时长统计").callback(); check("阅读时长统计 -> showReadStats", calls.stats)
+find_btn(md, "我的笔记").callback(); check("我的笔记 -> honest notice", tostring(shown[#shown].text):find("没有") ~= nil)
+find_btn(md, "刷新本周阅读").callback()
+check("刷新本周阅读 -> weekly stats", _G.stats_mode == "weekly" and S:readSetting("stats_cache").week_min == 61
+    and S:readSetting("stats_cache").notes == 12 and tostring(shown[#shown].text):find("61"))
+-- BUG-04: refresh returning nil / raising -> failure reported, cache kept
 local old_client = fm.weread.client
+local got
 fm.weread.client = { get_read_stats = function() return nil end }
-mp.on_refresh_stats()
-check("BUG-04 nil stats -> 刷新失败 notice", tostring(shown[#shown].text):find("刷新失败") ~= nil)
+P.refreshStats(fm.weread, function(good) got = good end, false)
+check("BUG-04 nil stats -> failure", got == false)
 fm.weread.client = { get_read_stats = function() error("HTTP 500") end }
-mp.on_refresh_stats()
-check("BUG-04 error -> notice with reason", tostring(shown[#shown].text):find("HTTP 500") ~= nil)
+P.refreshStats(fm.weread, function(good, err) got = { good, err } end, false)
+check("BUG-04 error -> failure with reason", got[1] == false and tostring(got[2]):find("HTTP 500") ~= nil)
 check("BUG-04 cache kept after failure", S:readSetting("stats_cache").week_min == 61)
-local nshown = #shown
 fm.weread.client = old_client
-mp.on_refresh_stats()
-check("BUG-04 success -> no notice", #shown == nshown)
-mp.rows[1].fn(); check("阅读时长统计 -> showReadStats", calls.stats)
-mp.rows[2].fn(); check("我的笔记 -> honest notice", tostring(shown[#shown].text):find("没有") ~= nil)
 check("我 icon solid, shelf outline", reg.wereadshelf_me.get_icon("x") == "/x/icons/tab_me_active.svg"
     and reg.wereadshelf_open.get_icon("x") == "/x/icons/tab_shelf.svg")
 -- active icon
@@ -198,7 +198,7 @@ check("我 icon solid, shelf outline", reg.wereadshelf_me.get_icon("x") == "/x/i
 check("preset apply ok", P.applyPreset())
 check("preset tabs", store.simpleui_bar_tabs[1] == "wereadshelf_discover" and store.simpleui_bar_tabs[2] == "wereadshelf_open"
     and store.simpleui_bar_tabs[3] == "wereadshelf_me" and #store.simpleui_bar_tabs == 3)
-check("preset icons-only + navpager", store.simpleui_bar_mode == "icons" and store.simpleui_bar_navpager_enabled == true)
+check("v0.3.6 preset icons-only, no ‹ › arrows", store.simpleui_bar_mode == "icons" and store.simpleui_bar_navpager_enabled == false)
 P.applyPreset() -- second apply must not overwrite the original backup
 check("backup kept original", S:readSetting("preset_backup").simpleui_bar_mode == "both")
 check("restore ok", P.restorePreset())
@@ -282,6 +282,10 @@ local homed = false
 local rui2 = { document = {}, onHome = function() homed = true end }
 local ri2 = P:new{ ui = rui2, path = "/x" }
 check("dispatcher event from reader closes book", ri2:onWeReadShelfOpen() and homed)
+-- v0.3.6 nav migration for 0.3.5 installs
+S:saveSetting("setup_done", true); S:delSetting("nav_036"); store.simpleui_bar_navpager_enabled = true
+check("v0.3.6 migration turns ‹ › off once", P.migrateNav036() and store.simpleui_bar_navpager_enabled == false
+    and not P.migrateNav036())
 -- BUG-06: empty (but readable) shelf -> empty grid, not the 未同步 dialog
 local orig_gs = fm.weread.library_db.getShelf
 fm.weread.library_db.getShelf = function() return {} end

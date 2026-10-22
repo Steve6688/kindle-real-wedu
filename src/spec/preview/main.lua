@@ -40,13 +40,22 @@ end
 function H:init()
     if _G.__wsprev_done then return end
     if self.ui.document then
-        if MODE ~= "reader" and MODE ~= "font" then return end
+        if MODE ~= "reader" and MODE ~= "font" and MODE ~= "sheet" then return end
         _G.__wsprev_done = true
         UIManager:scheduleIn(4, function()
             local P = self.ui.wereadshelf
             local menu_ok = P and P.showReaderMenu and P.showReaderMenu(self.ui)
             local top = UIManager._window_stack[#UIManager._window_stack].widget
-            if MODE == "font" and top.toggleFont then top:toggleFont() end
+            for i = #UIManager._window_stack, 1, -1 do
+                local w = UIManager._window_stack[i].widget
+                if w.name == "wereadshelf_readermenu" then top = w end
+            end
+            for i = #UIManager._window_stack, 1, -1 do -- box only: drop the stray "no weread" notice
+                local w = UIManager._window_stack[i] and UIManager._window_stack[i].widget
+                if w and w.text and w.name ~= "wereadshelf_readermenu" then UIManager:close(w) end
+            end
+            if MODE == "sheet" and top.toggleFont then top:toggleFont() end
+            if MODE == "font" and top.refresh then top.font_open = true; top:refresh("ui") end
             if os.getenv("WSPREV_SET") and top.setStep then
                 local Logic = require("wereadshelf_logic")
                 top:setStep(Logic.SLIDERS[1], 6)               -- 字号 -> 26
@@ -70,7 +79,7 @@ function H:init()
         end)
         return
     end
-    if MODE == "reader" or MODE == "font" then
+    if MODE == "reader" or MODE == "font" or MODE == "sheet" then
         _G.__wsprev_reader = true
         UIManager:scheduleIn(1, function()
             require("apps/reader/readerui"):showReader("/tmp/korprev/sample.epub")
@@ -84,10 +93,6 @@ function H:init()
     end
     UIManager:scheduleIn(3, function()
         local P = self.ui.wereadshelf
-        for i = #UIManager._window_stack, 1, -1 do -- drop first-run popups (box only)
-            local w = UIManager._window_stack[i].widget
-            if w ~= self.ui and w.name ~= "filemanager" then UIManager:close(w) end
-        end
         if MODE == "fmmenu" then
             if self.ui.menu then
                 local m = self.ui.menu
@@ -107,6 +112,22 @@ function H:init()
             end
         elseif MODE == "leave" then
             P.showMe(); UIManager:scheduleIn(1, function() P.leaveToKOReader() end)
+            UIManager:scheduleIn(4, shot); return
+        elseif MODE == "more" then
+            P.showMe(); UIManager:scheduleIn(1, function() P.showMoreSettings() end)
+            UIManager:scheduleIn(4, shot); return
+        elseif MODE == "download" then
+            -- weread 1.6.0's own progress dialog, as fast download drives it
+            package.path = os.getenv("WSPREV_WEREAD") .. "/?.lua;" .. package.path
+            local DD = require("weread.ui.download_dialog")
+            local F = require("wereadshelf_fastdl")
+            P.showGrid()
+            UIManager:scheduleIn(1, function()
+                local d = DD:new{ title = "下载中 · 第 37/120 章（3 章并行）：第三十七章 长安的荔枝",
+                    progress_max = 120, buttons = { { { text = "取消下载", callback = function() end } } } }
+                F.throttle_dialog(d)
+                d:show(); d:reportProgress(36)
+            end)
             UIManager:scheduleIn(4, shot); return
         elseif MODE == "settings" then
             P.showMe(); UIManager:scheduleIn(1, function() P.showSettingsDialog() end)

@@ -1,12 +1,13 @@
 # src/
 
-- `wereadshelf.koplugin/` — KOReader 插件 v0.3.5（拷到 Kindle，见 INSTALL.md）
+- `wereadshelf.koplugin/` — KOReader 插件 v0.3.6（拷到 Kindle，见 INSTALL.md）
   - `wereadshelf_data.lua` 数据层（v0.1 起未改）：`get_shelf(weread, opts)`、`open_book(weread, bookId)`、`plan_open`、`find_weread`
   - `wereadshelf_layout.lua` **新**：网格布局/分页/点击命中/本地筛选的纯计算（UI-SPEC v1 数值，按屏宽 /1236 缩放）
   - `wereadshelf_grid.lua` **新**：4 列封面网格书架页（只用 KOReader 自带 widget）
   - `wereadshelf_logic.lua` **v0.3**：字体滑杆档位、字体挑选、最近阅读/统计格式化等纯函数
   - `wereadshelf_ui.lua` **v0.3**：黑/白/一种灰的绘制小工具（胶囊、分隔线、封面）
   - `wereadshelf_pages.lua` **v0.3**：「发现」「我」两页
+  - `wereadshelf_fastdl.lua` **v0.3.6**：weread 整本下载提速（3 章并行预取、进度刷新节流），运行时安装
   - `wereadshelf_readermenu.lua` **v0.3**：阅读菜单（顶栏 + 5 图标底栏）与字体面板，单个全屏覆盖 widget（只绘制上下栏）
   - `main.lua` 注册 3 个 SimpleUI 快捷动作（发现/书架/我）、BarInjection、底栏预设/恢复、启动进书架、搜索框、微信读书模式/一键回原生、阅读中部点击区；保留 v0.1 文字列表
   - `icons/` 底栏图标（描边 + 实心选中态）、搜索/导入/选择小图标（SVG）

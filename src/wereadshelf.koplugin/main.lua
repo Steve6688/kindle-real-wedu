@@ -1,4 +1,4 @@
--- wereadshelf.koplugin — "微信书架" for SimpleUI: 3-tab bottom bar
+-- wereadshelf.koplugin — "Real微读" for SimpleUI: 3-tab bottom bar
 -- (发现 / 书架 / 我) + 4-column cover grid, backed by weread.koplugin's local
 -- shelf cache. Does not modify weread or SimpleUI files.
 --
@@ -114,7 +114,7 @@ function WeReadShelf.registerSimpleUIStatic()
     local QA = package.loaded["features/sui_quickactions"]
     if type(QA) ~= "table" or type(QA.register) ~= "function" then return false end
     local descs = {
-        { id = QA_ID, label = "微信书架", base = "tab_shelf",
+        { id = QA_ID, label = "Real微读", base = "tab_shelf",
           execute = function() WeReadShelf.showGrid() end },
         { id = QA_DISCOVER, label = "发现", base = "tab_discover",
           execute = function() WeReadShelf.showDiscover() end },
@@ -231,7 +231,7 @@ end
 
 function WeReadShelf:addToMainMenu(menu_items)
     menu_items.wereadshelf = {
-        text = "微信书架",
+        text = "Real微读",
         sorting_hint = "tools",
         sub_item_table = {
             { text = "打开书架（封面网格）", callback = function() WeReadShelf.showGrid() end },

@@ -153,7 +153,7 @@ function RM:_slider(g, s, value, x0, y, w)
     -- hit areas: full row height (>=120)
     self:_hit(rect(x0 - U.px(25), y, m.circle + U.px(40), m.row_h), function() self:setStep(s, idx - 1) end)
     self:_hit(rect(x0 + w - m.circle - U.px(15), y, m.circle + U.px(40), m.row_h), function() self:setStep(s, idx + 1) end)
-    self:_hit(rect(tx, y, tw, m.row_h), function(pos) self:setStep(s, Logic.index_from_x(steps, pos.x - tx, tw)) end)
+    self:_hit(rect(tx, y, tw, m.row_h), function(pos) self:setStep(s, Logic.index_from_x(steps, pos.x - tx, tw, m.track_h)) end)
 end
 
 function RM:_fontPanel(g)

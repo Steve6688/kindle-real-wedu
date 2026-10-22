@@ -1,4 +1,4 @@
-# 微信书架 for Kindle（kindle-weread-shelf）
+# Real微读 for Kindle（kindle-weread-shelf）
 
 在越狱 Kindle Paperwhite 5 的 KOReader 上，一比一复刻**微信读书墨水屏版**的界面与体验。
 
@@ -8,9 +8,9 @@
 | KOReader | v2026.07.x（kindlepw2 包） | 设备上已装 |
 | weread.koplugin（微信读书登录/书架/下载/进度同步） | 1.6.0 | `vendor/weread.koplugin` |
 | SimpleUI（底栏/主页框架） | 2.7.5 | `vendor/simpleui.koplugin` |
-| **wereadshelf.koplugin（本项目，自研）** | **0.3.3** | `src/wereadshelf.koplugin` |
+| **wereadshelf.koplugin（本项目，自研）** | **0.3.4** | `src/wereadshelf.koplugin` |
 
-wereadshelf 提供：「发现 / 书架 / 我」3 Tab 仅图标底栏、4 列封面网格书架、发现与我页、微信读书风格阅读菜单与字体面板、一键开启微信读书模式 / 一键回原生。只读 weread 缓存，不修改其它插件和 Kindle 系统。
+Real微读提供：「发现 / 书架 / 我」3 Tab 仅图标底栏、4 列封面网格书架、发现与我页、微信读书风格阅读菜单与字体面板、一键开启微信读书模式 / 一键回原生。只读 weread 缓存，不修改其它插件和 Kindle 系统。
 
 ## 安装
 1. 退出 KOReader，USB 连接 Kindle，先备份 `koreader/settings/`。

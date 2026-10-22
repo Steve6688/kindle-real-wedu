@@ -23,6 +23,15 @@ check("index_from_x mid", L.index_from_x(S.size.steps, 450, 1000) == 5)
 check("index_from_x beyond", L.index_from_x(S.size.steps, 5000, 1000) == 10 and L.index_from_x(S.size.steps, -5, 1000) == 1)
 check("knob first/last", L.knob_x(S.size.steps, 1, 800, 70) == 35 and L.knob_x(S.size.steps, 10, 800, 70) == 765)
 check("knob monotonic", L.knob_x(S.size.steps, 3, 800, 70) < L.knob_x(S.size.steps, 4, 800, 70))
+for _, slider in ipairs(L.SLIDERS) do
+    for _, width in ipairs({ 240, 480, 800 }) do
+        for i = 1, #slider.steps do
+            local x = L.knob_x(slider.steps, i, width, 70)
+            check("tap visible stop " .. slider.id .. "/" .. width .. "/" .. i,
+                L.index_from_x(slider.steps, x, width, 70) == i)
+        end
+    end
+end
 check("label size shows value", L.step_label(S.size, 4) == "22")
 check("label weight shows name", L.step_label(S.weight, 4) == "+½")
 check("label line shows name", L.step_label(S.line, 2) == "行距")

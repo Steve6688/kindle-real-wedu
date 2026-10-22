@@ -38,11 +38,16 @@ function M.clamp_index(steps, i)
 end
 
 -- Map a tap x (relative to track start) to a step index.
-function M.index_from_x(steps, x, track_w)
+function M.index_from_x(steps, x, track_w, diameter)
     local n = #steps
     if n <= 1 or track_w <= 0 then return 1 end
-    local seg = track_w / n
-    return M.clamp_index(steps, math.floor(x / seg) + 1)
+    diameter = diameter or 0
+    local usable = track_w - diameter
+    if usable <= 0 then return 1 end
+    -- Use the same centres as knob_x; equal-width hit bins drift away
+    -- from the visible stops, especially on narrow screens.
+    return M.clamp_index(steps,
+        math.floor((x - diameter / 2) / usable * (n - 1) + 0.5) + 1)
 end
 
 -- Knob centre x for index i on a track of width w with knob diameter d.

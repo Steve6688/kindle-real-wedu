@@ -1,4 +1,4 @@
-# kindle-weread-shelf — Real微读 (realweidu.koplugin) v0.4.4
+# Real微读 (realweidu.koplugin) v0.4.4
 
 KOReader 插件：在 Kindle（PW5, 1236×1648）上复刻微信读书墨水屏风格——0.3.3 风格界面（顶部时间/电量，底栏 ‹ 发现 书架 我 ›）、4 列封面书架、发现页、我的页、微信读书风格阅读菜单与字体面板。只读 weread.koplugin 的本地缓存，不改 weread 文件。
 

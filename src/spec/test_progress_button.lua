@@ -62,6 +62,6 @@ do -- geometry at PW5 (px == identity scale assumption irrelevant: same unit on 
     check("card bottom above slider top", card_bottom <= slider_top)
     check("card bottom above AI float top", card_bottom <= panel_y - float_d - gap20)
 end
-check("听 float button unchanged", src:find('float("听", x_tts, self:_hasTTS(), function() self:openTTS() end)', 1, true) ~= nil)
-check("AI float unchanged", src:find("local x_ai = W - m.margin - 2 * d - gap", 1, true) ~= nil)
+check("0.4.7: no 听 float button", not src:find('float%("听"') and not src:find("x_tts", 1, true))
+check("0.4.7: AI float kept, at right edge", src:find('float("AI", x_ai', 1, true) ~= nil and src:find("local x_ai = W - m.margin - d\n", 1, true) ~= nil)
 print(string.format("\n%d checks, %d failed", n, fails)); os.exit(fails == 0 and 0 or 1)

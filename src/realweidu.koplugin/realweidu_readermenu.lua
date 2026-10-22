@@ -142,13 +142,12 @@ function RM:_topBar(g)
     place(g, t, m.margin, U.px(28))
 end
 
--- Floating round AI / 听 buttons, just above the panel.
+-- Floating round AI button, just above the panel (0.4.7: 听 removed, AI at right edge).
 function RM:_floatButtons(g, panel_y)
     local m, W = self.m, self.W
     local d, gap = m.float_d, m.float_gap
     local y = panel_y - d - U.px(20)
-    local x_ai = W - m.margin - 2 * d - gap
-    local x_tts = W - m.margin - d
+    local x_ai = W - m.margin - d
     local function float(label, x, enabled, fn)
         local txt = U.text(label, U.px(32), true)
         txt.fgcolor = U.WHITE
@@ -160,7 +159,6 @@ function RM:_floatButtons(g, panel_y)
         self:_hit(rect(x, y, d, d), fn)
     end
     float("AI", x_ai, self:_hasAI(), function() self:openAI() end)
-    float("听", x_tts, self:_hasTTS(), function() self:openTTS() end)
 end
 
 function RM:_hasTTS()

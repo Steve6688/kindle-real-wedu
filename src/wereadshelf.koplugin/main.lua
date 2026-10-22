@@ -71,6 +71,10 @@ end
 WeReadShelf._settings_override = nil -- tests
 local function S() return WeReadShelf._settings_override or settings() end
 
+-- Solid icon variant = selected state; see icon_for below.
+local current_grid, current_page, active_tab
+local close_pages, ui_icons -- defined in the Pages section below
+
 function WeReadShelf:init()
     plugin_dir = self.path or plugin_dir
     if self.ui and self.ui.menu then
@@ -84,21 +88,68 @@ function WeReadShelf:init()
     if self.ui and self.ui.document and S():isTrue("reader_menu") then
         self:hookReader()
     end
-    -- "默认进书架": opt-in, once per KOReader process, only in the file manager.
+    -- v0.3.4 微信读书模式 = remembered setting "open_on_start". While it is on,
+    -- every time the file manager comes up (KOReader start *and* after a book
+    -- is closed — ReaderUI:onClose/onHome rebuild the FileManager, which
+    -- re-inits plugins) we put the shelf on top, so the user never lands on
+    -- the SimpleUI / file browser screen. 「返回 KOReader」 pauses this for the
+    -- current session only (Data._paused); any re-entry clears the pause.
     local in_fm = self.ui and not self.ui.document
-    if in_fm and not Data._startup_done then
+    if in_fm then
         Data._startup_done = true
-        if S():isTrue("open_on_start") then
+        if WeReadShelf.shouldAutoEnter() then
             UIManager:nextTick(function() WeReadShelf.showGrid() end)
         end
     end
+    self:onDispatcherRegisterActions()
+end
+
+function WeReadShelf.shouldAutoEnter()
+    return S():isTrue("open_on_start") and not Data._paused
+end
+
+-- Gesture / dispatcher action: 「打开微信书架」 (assignable in KOReader
+-- 设置 → 手势管理, also usable from profiles / QuickMenu).
+function WeReadShelf:onDispatcherRegisterActions()
+    local ok, Dispatcher = pcall(require, "dispatcher")
+    if not ok or type(Dispatcher) ~= "table" or type(Dispatcher.registerAction) ~= "function" then return end
+    pcall(Dispatcher.registerAction, Dispatcher, "wereadshelf_open", {
+        category = "none", event = "WeReadShelfOpen", title = "打开微信书架", general = true,
+    })
+end
+
+function WeReadShelf:onWeReadShelfOpen()
+    WeReadShelf.enter(self.ui)
+    return true
+end
+
+-- One-tap entry from plain KOReader (main-menu item, gesture, tab tap).
+-- In the reader it closes the book first (to the file manager), then shows
+-- the shelf.
+function WeReadShelf.enter(ui)
+    Data._paused = false
+    if ui and ui.document and type(ui.onHome) == "function" then
+        local ok = pcall(ui.onHome, ui)
+        if ok and not WeReadShelf.shouldAutoEnter() then
+            UIManager:scheduleIn(0.3, function() WeReadShelf.showGrid() end)
+        end
+        return
+    end
+    return WeReadShelf.showGrid()
+end
+
+-- 「返回 KOReader」: close our pages, stay in KOReader's file browser for this
+-- session. Settings are untouched; the mode comes back on next start, after
+-- re-entry via menu / gesture, or by tapping a bottom-bar tab.
+function WeReadShelf.leaveToKOReader()
+    Data._paused = true
+    close_pages()
+    info("已返回 KOReader。\n再次进入：KOReader 菜单首页「进入微信书架」，或底栏任一 Tab，或手势「打开微信书架」。")
 end
 
 -- Solid icon variant = selected state (UI-SPEC: 选中态换实心图标). SimpleUI's
 -- own plugin.active_action stayed "home" for our injected widgets in the box
 -- emulator, so we track it ourselves: the tab whose page is open is selected.
-local current_grid, current_page, active_tab
-local close_pages, ui_icons -- defined in the Pages section below
 
 local function icon_for(base, id_self)
     return function(_id)
@@ -230,6 +281,13 @@ local function ask_restart(text)
 end
 
 function WeReadShelf:addToMainMenu(menu_items)
+    -- v0.3.4: one obvious top-level entry (first page of the KOReader menu).
+    local ui = self.ui
+    menu_items.wereadshelf_enter = {
+        text = "进入微信书架",
+        sorting_hint = "main",
+        callback = function() WeReadShelf.enter(ui) end,
+    }
     menu_items.wereadshelf = {
         text = "微信书架",
         sorting_hint = "tools",
@@ -244,7 +302,7 @@ function WeReadShelf:addToMainMenu(menu_items)
                 callback = function() WeReadShelf.toggleSetting("reader_menu") end,
             },
             {
-                text = "启动 KOReader 时打开书架",
+                text = "微信读书模式（启动/合上书时自动进书架）",
                 checked_func = function() return S():isTrue("open_on_start") end,
                 callback = function() WeReadShelf.toggleSetting("open_on_start") end,
                 separator = true,
@@ -267,6 +325,7 @@ end
 function WeReadShelf.applyWeChatMode()
     local ok, e = WeReadShelf.applyPreset()
     if not ok then return false, e end
+    Data._paused = false
     local s = S()
     local b = s:readSetting("preset_backup")
     if type(b) == "table" and b.reader_menu == nil then
@@ -354,10 +413,11 @@ function WeReadShelf.showSettingsDialog()
         title = "阅读设置",
         buttons = {
             btn(mark("reader_menu") .. "微信读书风格阅读菜单", function() WeReadShelf.toggleSetting("reader_menu") end),
-            btn(mark("open_on_start") .. "启动时打开书架", function() WeReadShelf.toggleSetting("open_on_start") end),
+            btn(mark("open_on_start") .. "微信读书模式（自动进书架）", function() WeReadShelf.toggleSetting("open_on_start") end),
             btn("微信读书插件设置（weread）", function()
                 -- weread's own settings live in its main menu (weread/ui/menu.lua:155)
                 info("请从 KOReader 菜单 → 微信读书 → 设置 进入。") end),
+            btn("返回 KOReader（文件浏览器）", function() WeReadShelf.leaveToKOReader() end),
             btn("一键开启微信读书模式…", function() WeReadShelf.confirmWeChatMode() end),
             btn("一键回原生…", function() WeReadShelf.confirmBackToNative() end),
         },
@@ -393,8 +453,12 @@ function WeReadShelf.showReaderMenu(ui)
         on_back = function()
             -- ReaderUI:onHome closes the book and shows the file manager
             -- (apps/reader/readerui.lua:929-933); then open our shelf on top.
+            -- FM init re-opens the shelf itself when the mode is on.
+            Data._paused = false
             local ok = pcall(ui.onHome, ui)
-            if ok then UIManager:scheduleIn(0.3, function() WeReadShelf.showGrid() end) end
+            if ok and not WeReadShelf.shouldAutoEnter() then
+                UIManager:scheduleIn(0.3, function() WeReadShelf.showGrid() end)
+            end
         end,
     }
     UIManager:show(menu, "full") -- 刷新规则：打开菜单一次全屏刷新
@@ -467,6 +531,7 @@ local function show_page(page, tab)
         if active_tab == tab and current_page == nil and current_grid == nil then active_tab = nil end
         if orig then return orig(w) end
     end
+    Data._paused = false
     current_page = page
     active_tab = tab
     UIManager:show(page, "full") -- 刷新规则：切换 Tab 一次全屏刷新
@@ -558,7 +623,8 @@ function WeReadShelf.showMe()
                     .. "或 weread 菜单「划线和想法管理」查看该书笔记。") end },
             { text = "书架同步", fn = function() call_weread("openBookshelf") end },        -- main.lua:33
             { text = "阅读设置", fn = function() WeReadShelf.showSettingsDialog() end },
-            { text = "退出到 Kindle", bold = true, fn = function() WeReadShelf.confirmBackToNative() end },
+            { text = "返回 KOReader", bold = true, fn = function() WeReadShelf.leaveToKOReader() end },
+            { text = "退出到 Kindle / 恢复原生…", fn = function() WeReadShelf.confirmBackToNative() end },
         },
         on_refresh_stats = function()
             WeReadShelf.refreshStats(weread, function(good, err)
@@ -610,6 +676,7 @@ function WeReadShelf.showSearchDialog(grid)
 end
 
 function WeReadShelf.showGrid()
+    Data._paused = false
     local weread = Data.find_weread()
     local books, err = Data.get_shelf(weread, { allow_empty = true }) -- BUG-06
     if not books then show_error(weread, err); return end

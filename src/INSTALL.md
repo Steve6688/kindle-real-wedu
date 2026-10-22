@@ -1,4 +1,4 @@
-# 微信书架（wereadshelf.koplugin）安装说明 — v0.3.3（底栏 + 书架 + 发现 + 我 + 阅读菜单 + 字体面板 + 一键回原生）
+# 微信书架（wereadshelf.koplugin）安装说明 — v0.3.4（底栏 + 书架 + 发现 + 我 + 阅读菜单 + 字体面板 + 一键回原生）
 
 适用：KOReader v2026.07.1 + weread.koplugin 1.6.0 + simpleui.koplugin 2.7.5（Kindle PW5）。
 本插件**只读** weread 的本地缓存，不修改 weread / SimpleUI 的任何文件，不改 Kindle 系统，只在 `/mnt/us/koreader/` 下新增/更新一个插件文件夹和一个设置文件 `settings/wereadshelf.lua`（只有你在菜单里点「应用预设」或开关「启动时打开书架」时才写）。
@@ -57,3 +57,9 @@ koreader/plugins/wereadshelf.koplugin/
 
 ## 5. 出问题时请提供
 `koreader/crash.log`（搜 `wereadshelf`、`simpleui`），哪一步、屏幕上的提示文字，最好一张照片。
+
+## v0.3.4 进入 / 退出
+- 开启微信读书模式后：启动 KOReader、合上书 → 直接回到书架（不再看到 SimpleUI 首页）。
+- 「我」→「返回 KOReader」：本次运行留在 KOReader 文件浏览器；设置不变，下次启动仍进书架。
+- 再进入：KOReader 菜单首页（☰）→「进入微信书架」，或点底栏任一 Tab，或手势「打开微信书架」。
+- 彻底恢复原生：「我」→「退出到 Kindle / 恢复原生…」。

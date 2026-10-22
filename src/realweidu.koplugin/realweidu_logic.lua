@@ -239,6 +239,7 @@ end
 -- 0.4.5 middle progress button ------------------------------------------------
 M.DEFAULT_PAGES_PER_MIN = 1   -- fallback when KOReader has no reading stats
 M.UNKNOWN = "—"
+M.TOC_SIDEBAR_FRAC = 0.8  -- 0.4.8: TOC sidebar width; right 20% = tap-to-close strip
 
 -- Percent read (0..100, integer) from current page and page count; nil if unknown.
 function M.progress_pct(cur, total)
@@ -290,6 +291,15 @@ function M.fmt_duration(secs)
     return mm == 0 and (h .. "小时") or (h .. "小时" .. mm .. "分钟")
 end
 
+-- Compact form for inside the circle: "—" | "<1分" | "N分" | "N时" (rounded hours >= 60 min)
+function M.fmt_short(secs)
+    if type(secs) ~= "number" or secs ~= secs or secs < 0 then return M.UNKNOWN end
+    local mins = math.floor(secs / 60 + 0.5)
+    if secs > 0 and mins < 1 then return "<1分" end
+    if mins < 60 then return "余" .. mins .. "分" end
+    return "余" .. math.floor(mins / 60 + 0.5) .. "时"
+end
+
 -- Everything the middle button shows. Any field may be "—".
 function M.progress_info(cur, total, next_chapter_page, stats, default_ppm)
     local pct = M.progress_pct(cur, total)
@@ -298,6 +308,8 @@ function M.progress_info(cur, total, next_chapter_page, stats, default_ppm)
         pct = pct, pct_text = pct and (pct .. "%") or M.UNKNOWN,
         chapter_text = M.fmt_duration(M.remaining_secs(M.pages_left_chapter(cur, total, next_chapter_page), avg)),
         book_text = M.fmt_duration(M.remaining_secs(M.pages_left_book(cur, total), avg)),
+        chapter_secs = M.remaining_secs(M.pages_left_chapter(cur, total, next_chapter_page), avg),
+        book_secs = M.remaining_secs(M.pages_left_book(cur, total), avg),
         source = src,
     }
 end

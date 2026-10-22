@@ -64,4 +64,21 @@ do -- geometry at PW5 (px == identity scale assumption irrelevant: same unit on 
 end
 check("0.4.7: no 听 float button", not src:find('float%("听"') and not src:find("x_tts", 1, true))
 check("0.4.7: AI float kept, at right edge", src:find('float("AI", x_ai', 1, true) ~= nil and src:find("local x_ai = W - m.margin - d\n", 1, true) ~= nil)
+-- 0.4.8: classic 0.3.6 bars + progress circle + TOC sidebar
+check("fmt_short", L.fmt_short(nil) == "—" and L.fmt_short(20) == "<1分" and L.fmt_short(300) == "余5分" and L.fmt_short(7200) == "余2时")
+i = L.progress_info(40, 100, 52, { avg_time = 30 })
+check("info exposes chapter/book secs", i.chapter_secs == 360 and i.book_secs == 1800)
+check("TOC sidebar 80%", L.TOC_SIDEBAR_FRAC == 0.8)
+local bld = src:match("function RM:_build%(%)(.-)\nend") or ""
+check("_build uses classic bars only (no official panel/floats)", bld:find("_classicTopBar", 1, true) and bld:find("_classicBottomBar", 1, true)
+    and not bld:find("self:_bottomBar", 1, true) and not bld:find("self:_topBar", 1, true))
+local cb = src:match("function RM:_classicBottomBar(.-)\nend") or ""
+check("classic bar draws no floats", #cb > 0 and not cb:find("_floatButtons", 1, true))
+check("bottom = ← ≡ progress -o- A", src:find('{ icon = "rm_back",       fn = "back" },\n    { icon = "rm_toc",        fn = "showTocSheet" }, %-%- 0.4.8: left sidebar TOC\n    { icon = "progress",      fn = "toggleProgressCard" }') ~= nil
+    and src:find('{ icon = "rm_brightness", fn = "showClassicBrightness" },\n    { icon = "rm_font",       fn = "toggleFont" },', 1, true) ~= nil)
+local tb = src:match("function RM:_classicTopBar(.-)\nend") or ""
+check("top = ‹ title | bookmark | more", tb:find("back_chevron", 1, true) and tb:find("bookmark_active", 1, true) and tb:find('U.icon("more"', 1, true))
+check("TOC tap outside sidebar closes", src:find("tap outside dismisses TOC", 1, true) and src:find("self.toc_rect = rect(0, 0, PW, H)", 1, true))
+do local W, H, bar = 1236, 1648, 130; local card_y = H - bar - 150 - 12
+   check("card sits above bottom bar", card_y + 150 <= H - bar) end
 print(string.format("\n%d checks, %d failed", n, fails)); os.exit(fails == 0 and 0 or 1)

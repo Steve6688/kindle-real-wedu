@@ -664,8 +664,9 @@ function RM:_build()
         self:_fontPanel(g)
         self:_fontIconBar(g)
     else
-        self:_topBar(g)
-        self:_bottomBar(g)
+        -- 0.4.8: back to the 0.3.6 (= 0.3.3 / 0.4.2) bars; only the middle circle changed
+        self:_classicTopBar(g)
+        self:_classicBottomBar(g)
     end
     self[1] = g
 end
@@ -709,6 +710,92 @@ function RM:onCloseWidget() if self[1] then self[1]:free() end end
 
 -- actions -------------------------------------------------------------------------
 local function send(ui, name, ...) if ui then ui:handleEvent(Event:new(name, ...)) end end
+
+-- 0.4.8 classic bars (restored from 0.3.6 wereadshelf_readermenu.lua, same in 0.4.2) ------
+-- Top: ‹ 章节名 | 书签 | ⋯   Bottom: ← ≡ (progress circle) -o- A. No floating buttons.
+local CM = { bar_h = math.max(U.px(130), 120), margin = U.px(45), icon = U.px(64), title_px = U.px(32) }
+RM.CLASSIC_M = CM
+RM.BOTTOM = {
+    { icon = "rm_back",       fn = "back" },
+    { icon = "rm_toc",        fn = "showTocSheet" }, -- 0.4.8: left sidebar TOC
+    { icon = "progress",      fn = "toggleProgressCard" }, -- 0.4.8: was 指南针 (tab_discover)
+    { icon = "rm_brightness", fn = "showClassicBrightness" },
+    { icon = "rm_font",       fn = "toggleFont" },
+}
+
+function RM:_classicTopBar(g)
+    local m, W = CM, self.W
+    place(g, FrameContainer:new{ bordersize = 0, padding = 0, margin = 0, background = U.WHITE,
+        width = W, height = m.bar_h, U.hspan(0) }, 0, 0)
+    place(g, U.hline(W, 1), 0, m.bar_h - 1)
+    local chapter
+    pcall(function() chapter = self.ui.toc:getTocTitleOfCurrentPage() end)
+    local book = self.ui.doc_props and self.ui.doc_props.display_title or ""
+    local title = Logic.reader_title(chapter, book)
+    local right_w = 2 * m.bar_h
+    local back = HorizontalGroup:new{ align = "center",
+        U.icon("back_chevron", math.floor(m.icon * 0.6)), U.hspan(U.px(12)),
+        U.text(title, m.title_px, false, W - 2 * m.margin - right_w - m.icon) }
+    place(g, LeftContainer:new{ dimen = Geom:new{ w = W - right_w, h = m.bar_h },
+        HorizontalGroup:new{ U.hspan(m.margin), back } }, 0, 0)
+    local marked = false
+    pcall(function() marked = self.ui.bookmark:isPageBookmarked() end)
+    local bx = W - right_w
+    place(g, CenterContainer:new{ dimen = Geom:new{ w = m.bar_h, h = m.bar_h },
+        U.icon(marked and "bookmark_active" or "bookmark", m.icon) }, bx, 0)
+    place(g, CenterContainer:new{ dimen = Geom:new{ w = m.bar_h, h = m.bar_h }, U.icon("more", m.icon) }, bx + m.bar_h, 0)
+    self:_hit(rect(0, 0, bx, m.bar_h), function() self:back() end)
+    self:_hit(rect(bx, 0, m.bar_h, m.bar_h), function() self:toggleBookmark() end)
+    self:_hit(rect(bx + m.bar_h, 0, m.bar_h, m.bar_h), function() self:showMore() end)
+end
+
+function RM:_classicBottomBar(g)
+    local m, W, H = CM, self.W, self.H
+    local y = H - m.bar_h
+    self.bar_rect = rect(0, y, W, m.bar_h)
+    if self.progress_open then self:_progressCard(g, y) end
+    place(g, FrameContainer:new{ bordersize = 0, padding = 0, margin = 0, background = U.WHITE,
+        width = W, height = m.bar_h, U.hspan(0) }, 0, y)
+    place(g, U.hline(W, 1), 0, y)
+    for i, b in ipairs(RM.BOTTOM) do
+        local x, sw = Logic.slot(W, #RM.BOTTOM, i)
+        if b.icon == "progress" then
+            self:_progressCircle(g, x, y, sw, m.bar_h)
+        else
+            local name = b.icon
+            if b.fn == "toggleFont" and self.font_open then name = "rm_font_active" end
+            place(g, CenterContainer:new{ dimen = Geom:new{ w = sw, h = m.bar_h }, U.icon(name, m.icon) }, x, y)
+        end
+        self:_hit(rect(x, y, sw, m.bar_h), function() self[b.fn](self) end)
+    end
+end
+
+-- Middle circle: percent read + 本章剩余 (short), thin black ring, inverted while the card is open.
+function RM:_progressCircle(g, x, y, sw, h)
+    local d = h - U.px(20)
+    local on = self.progress_open
+    local info = self:_progressInfo()
+    local cx, cy = x + math.floor((sw - d) / 2), y + math.floor((h - d) / 2)
+    self.progress_circle_rect = rect(cx, cy, d, d)
+    place(g, FrameContainer:new{ bordersize = 2, color = U.BLACK, background = on and U.BLACK or U.WHITE,
+        radius = math.floor(d / 2), padding = 0, margin = 0, width = d, height = d, U.hspan(0) }, cx, cy)
+    local t1 = U.text(info.pct_text, U.px(26), true, d - U.px(12))
+    local t2 = U.text(Logic.fmt_short(info.chapter_secs), U.px(18), false, d - U.px(12))
+    if on then t1.fgcolor = U.WHITE; t2.fgcolor = U.WHITE end
+    place(g, CenterContainer:new{ dimen = Geom:new{ w = d, h = math.floor(d * 0.55) }, t1 }, cx, cy + math.floor(d * 0.08))
+    place(g, CenterContainer:new{ dimen = Geom:new{ w = d, h = math.floor(d * 0.3) }, t2 }, cx, cy + math.floor(d * 0.58))
+end
+
+-- original 0.3.6 actions for ≡ and -o-
+function RM:showClassicToc() self:close(); send(self.ui, "ShowToc") end
+function RM:showClassicBrightness()
+    self:close()
+    if Device:hasFrontlight() then
+        UIManager:broadcastEvent(Event:new("ShowFlDialog"))
+    else
+        UIManager:show(require("ui/widget/infomessage"):new{ text = "此设备没有前光。" })
+    end
+end
 
 function RM:back()
     self:close()
@@ -854,54 +941,50 @@ function RM:showBookmarks()
     self:close(); send(self.ui, "ShowBookmark")
 end
 
--- Half-screen TOC sheet (0.4.3): covers ~55% of the page; tap outside dismisses.
+-- TOC sidebar (0.4.8: left 80%, blank right strip closes it).
 function RM:showTocSheet()
     self.toc_open = true; self.font_open = false; self.sheet_open = false
     self:refresh("ui")
 end
 
 function RM:_tocSheet(g)
+    -- 0.4.8: left sidebar, 80% width x full height; the right 20% stays blank (page shows
+    -- through) and a tap there closes the TOC (handled in onTap via toc_rect).
     local m, W, H = self.m, self.W, self.H
-    local sheet_h = math.floor(H * 0.55)
-    local y0 = H - sheet_h
-    self.toc_rect = rect(0, y0, W, sheet_h)
-    place(g, FrameContainer:new{ bordersize = 0, padding = 0, margin = 0, background = PANEL_BG,
-        radius = m.panel_r, width = W, height = sheet_h, U.hspan(0) }, 0, y0)
+    local PW = math.floor(W * Logic.TOC_SIDEBAR_FRAC)
+    self.toc_rect = rect(0, 0, PW, H)
+    place(g, FrameContainer:new{ bordersize = 0, padding = 0, margin = 0, background = U.WHITE,
+        width = PW, height = H, U.hspan(0) }, 0, 0)
+    place(g, U.vline(H, 2), PW - 2, 0)
+    local y0 = 0
     local title = U.text("目录", U.px(40), true)
-    place(g, title, m.margin, y0 + U.px(28))
-    local close = U.text("关闭", U.px(30)); close.fgcolor = LABEL_GRAY
-    place(g, close, W - m.margin - close:getSize().w, y0 + U.px(32))
-    self:_hit(rect(W - m.margin - U.px(120), y0, U.px(120) + m.margin, U.px(80)), function()
-        self.toc_open = false; self:close()
-    end)
-    -- chapters
+    place(g, title, m.margin, y0 + U.px(36))
+    place(g, U.hline(PW - 2 * m.margin, 1), m.margin, y0 + U.px(110))
     local toc, cur = {}, 1
     pcall(function() toc = self.ui.toc.toc or self.ui.document:getToc() or {} end)
     pcall(function() cur = self.ui:getCurrentPage() end)
     local row_h = U.px(88)
-    local y = y0 + U.px(100)
-    local max_rows = math.floor((sheet_h - U.px(120)) / row_h)
-    -- start near current chapter
+    local y = y0 + U.px(120)
+    local max_rows = math.floor((H - U.px(140)) / row_h)
     local start = 1
     for i, ch in ipairs(toc) do
         if ch.page and ch.page <= cur then start = i end
     end
     start = math.max(1, math.min(start - 2, #toc - max_rows + 1))
-    if start < 1 then start = 1 end
     local shown = 0
     for i = start, #toc do
         if shown >= max_rows then break end
         local ch = toc[i]
         local label = (ch.title or ("第 " .. i .. " 章"))
         local active = ch.page and cur >= ch.page and (not toc[i + 1] or cur < (toc[i + 1].page or 1e9))
-        local t = U.text(label, U.px(30), active, W - 2 * m.margin - U.px(80))
+        local t = U.text(label, U.px(30), active, PW - 2 * m.margin - U.px(80))
         if not active then t.fgcolor = LABEL_GRAY end
         place(g, t, m.margin, y + math.floor((row_h - t:getSize().h) / 2))
         local pg = U.text(tostring(ch.page or ""), U.px(26)); pg.fgcolor = LABEL_GRAY
-        place(g, pg, W - m.margin - pg:getSize().w, y + math.floor((row_h - pg:getSize().h) / 2))
-        place(g, U.hline(W - 2 * m.margin, 1), m.margin, y + row_h - 1)
+        place(g, pg, PW - m.margin - pg:getSize().w, y + math.floor((row_h - pg:getSize().h) / 2))
+        place(g, U.hline(PW - 2 * m.margin, 1), m.margin, y + row_h - 1)
         local page = ch.page
-        self:_hit(rect(0, y, W, row_h), function()
+        self:_hit(rect(0, y, PW, row_h), function()
             self.toc_open = false; self:close()
             if page then send(self.ui, "GotoPage", page) end
         end)

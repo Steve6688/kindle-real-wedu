@@ -335,7 +335,7 @@ do
         and src:find('float("AI"', 1, true) and src:find("syncThoughts", 1, true)
         and src:find('rm_font_active', 1, true) and src:find("_fontIconBar", 1, true)
         and src:find('self:refresh("full")', 1, true))
-    check("TOC is half-screen sheet dismissable outside", src:find("sheet_h = math.floor(H * 0.55)", 1, true)
+    check("TOC is left 80% sidebar dismissable outside (0.4.8)", src:find("local PW = math.floor(W * Logic.TOC_SIDEBAR_FRAC)", 1, true)
         and src:find("tap outside dismisses TOC", 1, true))
     local ps = assert(io.open(here .. "/../realweidu.koplugin/rweread/ui/progress_sync_dialog.lua")):read("*a")
     check("progress sync dialog has 3 choices", ps:find("Use WeRead progress", 1, true)

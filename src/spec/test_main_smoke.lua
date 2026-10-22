@@ -140,7 +140,7 @@ check("我 page shown, discover closed", getmetatable(mp).__index == Pages.Me an
 check("我 account name", mp.account_name == "小明")
 check("v0.3.8 我 = 0.3.3 look: 数据卡 + 5 rows + 返回 KOReader", mp.show_stats == true and #mp.rows == 6
     and mp.rows[1].text == "阅读时长统计" and mp.rows[2].text == "我的笔记" and mp.rows[3].text == "书架同步"
-    and mp.rows[4].text == "阅读设置" and mp.rows[5].text == "退出到 Kindle" and mp.rows[5].bold
+    and mp.rows[4].text == "阅读设置" and mp.rows[5].text == "退出到 Kindle" and not mp.rows[5].bold
     and mp.rows[6].text == "返回 KOReader" and mp.footer == nil)
 check("v0.3.8 我 refreshes weekly stats on open (0.3.3, silent offline)", _G.stats_mode == "weekly"
     and mp.stats and mp.stats.week_min == 61)
@@ -153,7 +153,7 @@ find_btn(md, "阅读设置").callback()
 local sd = shown[#shown]
 local function dbtn(dlg, pat) for _, row in ipairs(dlg.buttons) do if row[1].text:find(pat) then return row[1] end end end
 check("阅读设置 dialog keeps switches", sd.title == "阅读设置" and dbtn(sd, "Real微读阅读菜单") and dbtn(sd, "快速下载")
-    and dbtn(sd, "流畅翻页") and dbtn(sd, "KOReader 设置") and not dbtn(sd, "SimpleUI"))
+    and dbtn(sd, "流畅翻页") and not dbtn(sd, "KOReader 设置") and not dbtn(sd, "SimpleUI"))
 check("switches default ON (✓)", dbtn(sd, "快速下载").text:find("✓") == 1 and dbtn(sd, "流畅翻页").text:find("✓") == 1)
 dbtn(sd, "快速下载").callback()
 check("快速下载 toggles off and is saved", S:readSetting("fast_download") == false)
@@ -277,6 +277,55 @@ do
     local g = { gesture_fm = { tap_left = { wereadshelf_open = true }, swipe = { realweidu_open = true } } }
     P._rename_ids(g)
     check("gesture action ids migrated", g.gesture_fm.tap_left.realweidu_open == true and g.gesture_fm.tap_left.wereadshelf_open == nil and g.gesture_fm.swipe.realweidu_open)
+end
+-- 0.4.2 device feedback
+do
+    local rows = P.meRows()
+    local ex; for _, r in ipairs(rows) do if r.text == "退出到 Kindle" then ex = r end end
+    check("退出到 Kindle row is normal weight", ex and not ex.bold)
+    local has_ko = false
+    for _, it in ipairs(P.settingsItems()) do if it.text:find("KOReader 设置", 1, true) then has_ko = true end end
+    check("阅读设置 has no 「KOReader 设置」 row", not has_ko and #P.settingsItems() == 3)
+    local U = package.loaded["ui/uimanager"]
+    local closed, quit = {}, false
+    local oc, oq = U.close, U.quit
+    U.close = function(_, w) closed[#closed + 1] = w end
+    U.quit = function() quit = true end
+    U._window_stack = { { widget = { name = "notice" } } }
+    ticks = {}; broadcast = {}
+    P.showGrid(); P.exitToKindle()
+    for _, f in ipairs(ticks) do f() end
+    check("退出到 Kindle: closes our pages, broadcasts Exit, then quits KOReader",
+        #closed >= 1 and broadcast[#broadcast] and broadcast[#broadcast].name == "Exit" and quit and not P.shouldAutoEnter())
+    U.close, U.quit, U._window_stack = oc, oq, nil
+    P._exiting = nil; package.loaded["realweidu_data"]._paused = false
+    -- stats: 阅读时长统计 calls the embedded weread's showReadStats
+    local called = false
+    local fake = { library_db = {}, showReadStats = function() called = true end }
+    local saved_fm = package.loaded["apps/filemanager/filemanager"]
+    local saved_rui = package.loaded["apps/reader/readerui"]
+    package.loaded["apps/reader/readerui"] = nil
+    package.loaded["apps/filemanager/filemanager"] = { instance = { weread = fake } }
+    for _, r in ipairs(P.meRows()) do if r.text == "阅读时长统计" then r.fn() end end
+    check("阅读时长统计 -> weread:showReadStats", called)
+    package.loaded["apps/filemanager/filemanager"] = saved_fm
+    package.loaded["apps/reader/readerui"] = saved_rui
+    -- no stale module names anywhere in the plugin (0.4.0 merge / 0.4.1 rename)
+    local stale = {}
+    local root = here .. "/../realweidu.koplugin"
+    for f in io.popen('find "' .. root .. '" -name "*.lua"'):lines() do
+        local n = 0
+        for line in io.lines(f) do
+            n = n + 1
+            local code = line:gsub("%-%-.*$", "")
+            if (code:find('"weread%.lib%.') or code:find('"weread%.ui%.') or code:find('"wereadshelf_'))
+                and not code:find('"rweread%.') and not line:find("LEGACY") and not code:find('or package.loaded%["weread')
+                and not code:find('or L%["weread') and not code:find('"wereadshelf_open", {', 1, true) then
+                stale[#stale + 1] = f:match("[^/]+$") .. ":" .. n
+            end
+        end
+    end
+    check("no stale weread.* / wereadshelf_* module names (" .. table.concat(stale, ",") .. ")", #stale == 0)
 end
 P.exitToKindle(); check("exit to Kindle = KOReader Exit event", broadcast[#broadcast] and broadcast[#broadcast].name == "Exit")
 -- reader hook

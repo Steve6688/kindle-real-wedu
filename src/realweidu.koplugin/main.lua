@@ -155,7 +155,7 @@ local function S() return RealWeidu._settings_override or settings() end
 local function on(key) return S():readSetting(key) ~= false end
 RealWeidu.isOn = on
 RealWeidu.ENTER_TEXT = "进入 Real微读"
-RealWeidu.VERSION = "0.4.1"
+RealWeidu.VERSION = "0.4.2"
 
 -- Put 「进入 Real微读」 at the top of KOReader's ☰ (main) menu tab instead of
 -- after Exit (items missing from the order table are appended at the end).
@@ -205,6 +205,10 @@ function RealWeidu.attachWeread(ui)
     if old and old._real_embedded then return old end
     if old then detach_foreign(ui, old) end
     local cls = RealWeidu._plugin_class or WeReadPlugin
+    if cls and not cls.version then -- PluginLoader would copy weread's _meta (version, fullname)
+        local okm, meta = pcall(require, "rweread._weread_meta")
+        if okm and type(meta) == "table" then for k, v in pairs(meta) do if cls[k] == nil then cls[k] = v end end end
+    end
     if not cls then ui.weread = nil; return nil end
     local ok, inst = pcall(cls.new, cls, { ui = ui, dialog = ui.dialog, view = ui.view, document = ui.document,
         path = (plugin_dir or ".") .. "/rweread", _real_embedded = true })
@@ -221,7 +225,7 @@ function RealWeidu.attachWeread(ui)
 end
 
 local current_grid, current_page, active_tab
-local close_pages, ui_icons, call_weread -- defined further below
+local close_pages, take_pages, ui_icons, call_weread -- defined further below
 
 function RealWeidu:init()
     plugin_dir = self.path or plugin_dir
@@ -262,7 +266,7 @@ function RealWeidu:init()
 end
 
 function RealWeidu.shouldAutoEnter()
-    return not Data._paused -- 返回 KOReader pauses only until next start / re-entry
+    return not Data._paused and not RealWeidu._exiting -- 返回 KOReader pauses only until next start / re-entry
 end
 
 -- Something (e.g. a stale SimpleUI Home Screen) may still be shown after our first
@@ -308,6 +312,7 @@ end
 -- the shelf.
 function RealWeidu.enter(ui)
     Data._paused = false
+    RealWeidu._exiting = nil
     if ui and ui.document and type(ui.onHome) == "function" then
         local ok = pcall(ui.onHome, ui)
         if ok and not RealWeidu.shouldAutoEnter() then
@@ -488,9 +493,23 @@ end
 
 -- Same as KOReader's own 退出 (frontend/ui/elements/common_exit_menu_table.lua:8-19);
 -- on Kindle the launcher then returns to the native home screen.
+-- 0.4.2 fix: KOReader only quits once its window stack is empty; our
+-- full-screen shelf/「我」 pages stayed open on top of the closed file
+-- manager, so Exit closed the FM underneath and KOReader kept running.
 function RealWeidu.exitToKindle()
+    RealWeidu._exiting = true
+    Data._paused = true
+    close_pages()
     local Event = require("ui/event")
     UIManager:broadcastEvent(Event:new("Exit"))
+    -- anything else still on screen (dialogs, notices) must not keep KOReader alive
+    UIManager:nextTick(function()
+        for i = #UIManager._window_stack, 1, -1 do
+            local w = UIManager._window_stack[i]
+            if w and w.widget then UIManager:close(w.widget) end
+        end
+        pcall(UIManager.quit, UIManager)
+    end)
 end
 
 function RealWeidu.confirmExitToKindle()
@@ -511,7 +530,7 @@ function RealWeidu.meRows()
                 .. "或 weread 菜单「划线和想法管理」查看该书笔记。") end },
         { text = "书架同步", fn = function() RealWeidu.syncShelf() end },
         { text = "阅读设置", fn = function() RealWeidu.showSettingsDialog() end },
-        { text = "退出到 Kindle", bold = true, fn = function() RealWeidu.confirmExitToKindle() end },
+        { text = "退出到 Kindle", fn = function() RealWeidu.confirmExitToKindle() end },
         { text = "返回 KOReader", fn = function() RealWeidu.leaveToKOReader() end },
     }
 end
@@ -526,7 +545,6 @@ function RealWeidu.settingsItems()
             info("已保存，重启 KOReader 后生效。") end },
         { text = mark("smooth_turns") .. "流畅翻页（无动画 · 每 12 页全刷）", fn = function()
             RealWeidu.toggleSetting("smooth_turns") end },
-        { text = "KOReader 设置（完整菜单）", fn = function() RealWeidu.openKOReaderMenu() end },
     }
 end
 -- 0.3.7 name kept for callers
@@ -655,7 +673,29 @@ close_pages = function(except)
     if current_grid and current_grid ~= except then UIManager:close(current_grid); current_grid = nil end
 end
 
-local function show_page(page, tab)
+-- 0.4.2 speed: detach the open page, show the new one, then close the old.
+-- Closing first made KOReader repaint the file manager underneath (a full
+-- extra paint) before our page was drawn.
+take_pages = function()
+    local a, b = current_page, current_grid
+    current_page, current_grid = nil, nil
+    return { a, b }
+end
+local first_paint = true
+local function refresh_mode()
+    -- first entry: one full refresh (clears ghosting); tab switches: partial
+    if first_paint then first_paint = false; return "full" end
+    return "partial"
+end
+RealWeidu._refresh_mode = refresh_mode
+local function drop_pages(old)
+    if old then
+        if old[1] then UIManager:close(old[1]) end
+        if old[2] then UIManager:close(old[2]) end
+    end
+end
+
+local function show_page(page, tab, old)
     local orig = page.onCloseWidget
     page.onCloseWidget = function(w)
         if current_page == w then current_page = nil end
@@ -665,7 +705,8 @@ local function show_page(page, tab)
     Data._paused = false
     current_page = page
     active_tab = tab
-    UIManager:show(page, "full") -- 刷新规则：切换 Tab 一次全屏刷新
+    UIManager:show(page, refresh_mode())
+    drop_pages(old)
     return page
 end
 
@@ -679,7 +720,7 @@ function RealWeidu.showDiscover()
     if not weread then info(Data.MESSAGES[Data.ERR_NO_PLUGIN]); return end
     local books = Data.get_shelf(weread) or {}
     ui_icons()
-    close_pages()
+    local old_pages = take_pages() -- 0.4.2: closed after the new page is up
     local Pages = require("realweidu_pages")
     local entries = {}
     local function add(text, method, ...)
@@ -704,7 +745,7 @@ function RealWeidu.showDiscover()
         end,
         on_all = function() RealWeidu.showGrid() end,
     }
-    return show_page(page, QA_DISCOVER)
+    return show_page(page, QA_DISCOVER, old_pages)
 end
 
 -- 我: account name (weread settings "account", qr_login.lua:288-293), 本周阅读
@@ -713,7 +754,7 @@ end
 -- server sends one (read_stats.lua:189-201), else "—".
 function RealWeidu.statsCache() return S():readSetting("stats_cache") or {} end
 
-function RealWeidu.refreshStats(weread, on_done, silent)
+function RealWeidu.refreshStats(weread, on_done, silent, delay)
     if not weread or type(weread.runOnlineTask) ~= "function" or type(weread.client) ~= "table" then return false end
     local Logic = require("realweidu_logic")
     return weread:runOnlineTask("阅读统计", function()
@@ -726,7 +767,7 @@ function RealWeidu.refreshStats(weread, on_done, silent)
             logger.warn("realweidu: weekly stats failed:", raw)
         end
         if on_done then on_done(good, not ok and raw or nil) end
-    end, 0.1, { silent_offline = silent })
+    end, delay or 0.1, { silent_offline = silent })
 end
 
 function RealWeidu.showMe()
@@ -734,7 +775,7 @@ function RealWeidu.showMe()
     if not weread then info(Data.MESSAGES[Data.ERR_NO_PLUGIN]); return end
     local Logic = require("realweidu_logic")
     ui_icons()
-    close_pages()
+    local old_pages = take_pages() -- 0.4.2: closed after the new page is up
     local account = {}
     pcall(function() account = weread.settings:get("account", {}) or {} end)
     local books = Data.get_shelf(weread) or {}
@@ -765,13 +806,13 @@ function RealWeidu.showMe()
             end, false)
         end,
     }
-    show_page(page, QA_ME)
+    show_page(page, QA_ME, old_pages)
     -- 0.3.3: refresh when online and the cache is older than 30 min (silent offline)
     local c = RealWeidu.statsCache()
     if not c.at or os.time() - c.at > 1800 then
         RealWeidu.refreshStats(weread, function()
             if current_page == page then page.stats = stats(); page:refresh() end
-        end, true)
+        end, true, 2) -- 0.4.2: weread's HTTP is blocking; start it after the page is up and settled
     end
     return page
 end
@@ -815,10 +856,8 @@ function RealWeidu.showGrid()
     if current_grid then
         -- tapping the 书架 tab again: refresh from cache, keep position
         keep_page, keep_kw = current_grid.page, current_grid.keyword
-        UIManager:close(current_grid)
-        current_grid = nil
     end
-    close_pages()
+    local old_pages = take_pages() -- 0.4.2: closed after the new page is up
     ui_icons() -- the grid's own bottom bar uses realweidu_ui icons
     local grid
     grid = ShelfGrid:new{
@@ -849,7 +888,8 @@ function RealWeidu.showGrid()
     end
     current_grid = grid
     active_tab = QA_ID
-    UIManager:show(grid, "full")
+    UIManager:show(grid, refresh_mode())
+    drop_pages(old_pages)
     return grid
 end
 

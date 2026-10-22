@@ -1,4 +1,4 @@
-# kindle-weread-shelf — Real微读 (realweidu.koplugin) v0.4.1
+# kindle-weread-shelf — Real微读 (realweidu.koplugin) v0.4.2
 
 KOReader 插件：在 Kindle（PW5, 1236×1648）上复刻微信读书墨水屏风格——0.3.3 风格界面（顶部时间/电量，底栏 ‹ 发现 书架 我 ›）、4 列封面书架、发现页、我的页、微信读书风格阅读菜单与字体面板。只读 weread.koplugin 的本地缓存，不改 weread 文件。
 
@@ -7,7 +7,7 @@ KOReader 插件：在 Kindle（PW5, 1236×1648）上复刻微信读书墨水屏�
 ## 安装
 把 `src/realweidu.koplugin/` 整个文件夹拷到 Kindle 的 `koreader/plugins/`，详见 [src/INSTALL.md](src/INSTALL.md)。
 
-## 怎么用（v0.4.1）
+## 怎么用（v0.4.2）
 - **装好即开启**：拷进 `koreader/plugins/` 后启动 KOReader，直接进入 Real微读书架。没有开关，不用设置。
 - **每次启动、每次合上书** 都回到 Real微读。
 - **返回 KOReader**：「我」→ 返回 KOReader（只这一次；下次启动仍进 Real微读）。
@@ -32,6 +32,7 @@ cd src && sh spec/setup_deps.sh && for t in test_shelf_data test_logic test_layo
 ```
 
 ## Changelog
+- **0.4.2** 真机反馈修复：「退出到 Kindle」恢复正常字重，并真正退出 KOReader（原因：KOReader 只在窗口栈为空时退出，Real微读的全屏页面留在已关闭的文件管理器上方，KOReader 就一直不退出；现在先关闭自己的页面再广播 Exit，最后 quit）。「阅读设置」去掉「KOReader 设置」一行。修正合并后残留的旧模块名（`weread.lib.crypto` → `rweread.lib.crypto`，影响封面兜底），内置 weread 补上版本信息；测试会扫描整个插件里残留的 `weread.*` / `wereadshelf_*` 模块名。提速：切换页面时先显示新页再关旧页（不再先重绘下面的文件管理器），换 Tab 改为局部刷新（只有第一次进入全屏刷新），「我」页的本周阅读联网刷新推迟 2 s，避免刚打开页面时卡住点击。
 - **0.4.1** 插件改名 **realweidu.koplugin**（文件夹、插件名、模块 `realweidu_*`）。首次启动自动迁移：`settings/wereadshelf*.lua` → `realweidu*.lua`、G_reader_settings 的 `wereadshelf_*` 键、手势/配置里的动作 `wereadshelf_open` → `realweidu_open`（旧动作 id 仍可用）。微信读书登录与数据（settings/weread.lua、weread/）不动。若旧的 wereadshelf.koplugin 文件夹还在：本次启动直接忽略，并在 KOReader 中禁用，不会重复。
 - **0.4.0** 合并为一个插件：weread.koplugin 1.6.0 内置到 `realweidu.koplugin/rweread/`（模块改名 `rweread.*`，与残留的旧插件互不冲突）。设置名仍为 `weread`（settings/weread.lua、数据目录 weread/），无需重新登录或迁移。书架重定向改为直接修改内置代码（library.lua / qr_login.lua），快速下载作用于内置模块，行为与 0.3.8 相同。☰ 只有一个「Real微读」入口，微信读书原有功能（登录、书架、公众号、缓存等）收在其中「微信读书功能」。若仍装着独立的 weread.koplugin：本次会话自动摘除，并在 KOReader 中禁用，下次启动不再加载。内置版关闭 weread 自动更新（它会用上游版本覆盖插件目录）。
 - **0.3.8** 下载再提速：滑动窗口取代 0.3.7 的「3 章一批」等待，并发 3→5 自适应、出错减半/限流转逐章；去掉章间 0.1 s 空等与每章重复写 style.css；笔记索引改在主进程写（避免多进程争用 SQLite）。离线模型（spec/test_fastdl.lua，60 章）：weread 原版 3.5 s/章 → 0.3.7 1.6 s/章 → 0.3.8 0.6 s/章（约 2.6× 于 0.3.7，真机受网络/CPU 限制，预计 1.5–2.5×）。界面恢复 0.3.3 样子（顶部时间/电量、底栏 ‹ 发现 书架 我 › 与选中横条、「我」数据卡 + 原 5 行、「A」直接字体面板、阅读设置对话框），进入/退出方式保持 0.3.5–0.3.7 不变，快速下载开关在「我 → 阅读设置」。所有「书架」入口（含 weread 自己的书架入口、登录/同步后）统一进 Real微读书架。翻页：默认关闭翻页动画、用户未改时全刷间隔 6→12 页（仅本次会话，不写 KOReader 设置）；模拟器实测每次翻页本插件额外开销约 1 ms。

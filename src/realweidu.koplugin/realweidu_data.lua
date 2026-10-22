@@ -95,14 +95,15 @@ local function record_has_download(weread, record)
     return false
 end
 
--- Fallback when weread's lazy require("weread.lib.cover_cache")
+-- Fallback when weread's lazy require("rweread.lib.cover_cache")
 -- (library.lua:239) cannot resolve at runtime: rebuild the same path rule
 -- (cover_cache.lua:35, 45-55) with weread's already-loaded Crypto module
 -- (required at top level by library_db.lua:6).
 local function cover_path_fallback(weread, book)
     local url = type(book) == "table" and book.cover or nil
     if type(url) ~= "string" or url == "" then return nil end
-    local Crypto = M._crypto or package.loaded["weread.lib.crypto"]
+    -- 0.4.2: weread is embedded as rweread.* (0.4.0); the old name never loads now
+    local Crypto = M._crypto or package.loaded["rweread.lib.crypto"] or package.loaded["weread.lib.crypto"]
     local settings = weread.settings or {}
     local base = settings.data_dir or settings.cache_dir
     if type(Crypto) ~= "table" or type(Crypto.md5_hex) ~= "function" or not base then return nil end

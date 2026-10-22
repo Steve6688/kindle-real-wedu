@@ -124,7 +124,110 @@ function H:init()
         io.stderr:write(string.format("WSPREV040 embedded=%s path=%s weread_menus=%d old_disabled=%s\n",
             tostring(w and w._real_embedded), tostring(w and w.path), n, tostring(dis.weread)))
     end
+    local real_weread = self.ui.weread
     self.ui.weread = fake_weread()
+    if MODE == "stats" then -- also: every embedded module must load under its rweread.* name
+        local root = "plugins/realweidu.koplugin/"
+        local bad = {}
+        for f in io.popen("cd " .. root .. " && find rweread -name '*.lua'"):lines() do
+            local mod = f:gsub("%.lua$", ""):gsub("/", ".")
+            local ok, e = pcall(require, mod)
+            if not ok then bad[#bad + 1] = mod .. ": " .. tostring(e):sub(1, 160) end
+        end
+        io.stderr:write("WSPREV modules bad=" .. #bad .. "\n" .. table.concat(bad, "\n") .. "\n")
+    end
+    if MODE == "stats" then -- 阅读时长统计 on the REAL embedded weread (stubbed network)
+        UIManager:scheduleIn(3, function()
+            local w = real_weread
+            self.ui.weread = w
+            w.requireLogin = function() return true end
+            w.isNetworkOnline = function() return true end
+            w.client = w.client or {}
+            w.client.gateway = function(_, path) io.stderr:write("WSPREV gateway " .. tostring(path) .. "\n"); return { baseTime = os.time() - 86400 * 3, readTimes = { [tostring(os.time() - 86400)] = 3600 },
+                totalReadTime = 7200, readBooks = {} } end
+            local P = self.ui.realweidu
+            P.showMe()
+            UIManager:scheduleIn(1, function()
+                local ok, e = pcall(P.meRows()[1].fn)
+                io.stderr:write("WSPREV stats ok=" .. tostring(ok) .. " " .. tostring(e) .. "\n")
+            end)
+            UIManager:scheduleIn(4, shot)
+        end)
+        return
+    end
+    if MODE == "timing" then -- tap -> screen updated (build + forceRePaint), ms
+        local time = require("ui/time")
+        local P = self.ui.realweidu
+        local function top() local st = UIManager._window_stack; return st[#st] and st[#st].widget end
+        local function close_extra() -- dialogs/notices on top of our page
+            for _ = 1, 5 do local t = top(); if t and t.name ~= "realweidu_grid" and t.name ~= "realweidu_me"
+                and t.name ~= "realweidu_discover" and t.name ~= "filemanager" then UIManager:close(t); UIManager:forceRePaint() else break end end
+        end
+        local function grid() P.showGrid(); return top() end
+        local function tapg(field) return function() local g = grid(); UIManager:forceRePaint(); local t0 = time.now(); g[field](g); return t0 end end
+        local acts = {
+            { "底栏 书架", function() P.showGrid() end },
+            { "底栏 发现", function() P.showDiscover() end },
+            { "底栏 我", function() P.showMe() end },
+            { "书架 翻页", function() local g = top(); if g.onGotoPage then g:onGotoPage(2) end end, pre = function() P.showGrid() end },
+            { "书架 打开书", function() local g = top(); g.on_open(g.page_items[1], g) end, pre = function() P.showGrid() end },
+            { "书架 搜索", function() local g = top(); g.on_search(g) end, pre = function() P.showGrid() end },
+            { "书架 导入(同步)", function() local g = top(); g.on_import(g) end, pre = function() P.showGrid() end },
+            { "书架 选择", function() local g = top(); g.on_select(g) end, pre = function() P.showGrid() end },
+        }
+        for i, r in ipairs(P.meRows()) do
+            if r.text ~= "退出到 Kindle" then
+                acts[#acts + 1] = { "我 · " .. r.text, r.fn, pre = function() P.showMe() end }
+            else
+                acts[#acts + 1] = { "我 · 退出到 Kindle(确认框)", r.fn, pre = function() P.showMe() end }
+            end
+        end
+        for _, it in ipairs(P.settingsItems()) do
+            acts[#acts + 1] = { "阅读设置 · " .. (it.text:gsub("^✓ ", ""):gsub("^　", "")), it.fn, pre = function() P.showMe(); P.showSettingsDialog() end }
+        end
+        acts[#acts + 1] = { "☰ 进入 Real微读", function() P.enter(self.ui) end, pre = function() P.leaveToKOReader(); close_extra() end }
+        local out = {}
+        local i = 0
+        local function step()
+            i = i + 1
+            local a = acts[i]
+            if not a then
+                local f = io.open(os.getenv("WSPREV_TIMING") or "/tmp/korprev/timing.txt", "w")
+                f:write(table.concat(out, "\n"), "\n"); f:close()
+                io.stderr:write("WSPREV timing done\n"); UIManager:quit(); return
+            end
+            close_extra()
+            if a.pre then pcall(a.pre) end
+            UIManager:forceRePaint()
+            local t0 = time.now()
+            local ok, e = pcall(a[2])
+            UIManager:forceRePaint()
+            local ms = time.to_ms(time.now() - t0)
+            out[#out + 1] = string.format("%s\t%d%s", a[1], ms, ok and "" or ("\tERR " .. tostring(e)))
+            UIManager:scheduleIn(0.6, function() close_extra(); step() end)
+        end
+        UIManager:scheduleIn(3, step)
+        return
+    end
+    if MODE == "exit" then -- 退出到 Kindle: confirm, then OK must quit KOReader
+        UIManager:scheduleIn(3, function()
+            local P = self.ui.realweidu
+            P.showMe()
+            UIManager:scheduleIn(1, function()
+                local row; for _, r in ipairs(P.meRows()) do if r.text == "退出到 Kindle" then row = r end end
+                row.fn()
+                UIManager:scheduleIn(0.5, function()
+                    local top = UIManager._window_stack[#UIManager._window_stack].widget
+                    io.stderr:write("WSPREV exit confirm=" .. tostring(top.ok_callback ~= nil) .. "\n")
+                    local q = UIManager.quit
+                    UIManager.quit = function(...) io.stderr:write("WSPREV exit QUIT called\n"); return q(...) end
+                    top.ok_callback()
+                end)
+            end)
+            UIManager:scheduleIn(8, function() io.stderr:write("WSPREV exit still running\n"); shot() end)
+        end)
+        return
+    end
     if MODE == "startup" then -- no action: Real微读 must open by itself
         UIManager:scheduleIn(5, shot); return
     end

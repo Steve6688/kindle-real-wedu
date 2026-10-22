@@ -149,9 +149,8 @@ check("我 account name", mp.account_name == "小明")
 check("我 weekly stats fetched (weekly mode)", _G.stats_mode == "weekly" and S:readSetting("stats_cache").week_min == 61
     and S:readSetting("stats_cache").notes == 12)
 check("我 page refreshed after fetch", (mp.refreshed or 0) >= 1)
-check("我 rows include safe KOReader return and direct Kindle exit", #mp.rows == 6
-    and mp.rows[5].text == "返回 KOReader"
-    and mp.rows[6].text == "退出到 Kindle" and mp.rows[6].bold)
+check("我 rows: 6, 返回 KOReader (bold) + 退出到 Kindle", #mp.rows == 6 and mp.rows[5].text == "返回 KOReader" and mp.rows[5].bold
+    and mp.rows[6].text:find("退出到 Kindle") ~= nil)
 -- BUG-04: refresh returning nil / raising -> visible failure notice
 local old_client = fm.weread.client
 fm.weread.client = { get_read_stats = function() return nil end }
@@ -250,6 +249,24 @@ check("reader: tap shows WeRead menu", getmetatable(shown[#shown]).__index == RM
 S:saveSetting("reader_menu", false); zones = nil
 P:new{ ui = rui, path = "/x" }:init()
 check("reader: no hook when setting off", zones == nil)
+-- v0.3.4 enter / exit
+check("top-level menu entry 进入微信书架", menu_items.wereadshelf_enter and menu_items.wereadshelf_enter.sorting_hint == "main")
+S:saveSetting("open_on_start", true)
+P.leaveToKOReader()
+check("返回 KOReader pauses auto-enter, keeps setting", not P.shouldAutoEnter() and S:isTrue("open_on_start"))
+ticks = {}; P:new{ ui = { menu = { registerToMainMenu = function() end } }, path = "/x" }:init()
+local nshown = #shown; for _, f in ipairs(ticks) do f() end
+check("paused: FM re-init does not open shelf", #shown == nshown)
+local before = #shown; menu_items.wereadshelf_enter.callback()
+check("menu entry re-enters shelf + clears pause", #shown == before + 1 and P.shouldAutoEnter())
+ticks = {}; P:new{ ui = { menu = { registerToMainMenu = function() end } }, path = "/x" }:init()
+nshown = #shown; for _, f in ipairs(ticks) do f() end
+check("mode on: FM init (start / book closed) opens shelf", #shown > nshown and shown[#shown].active_action_id == "wereadshelf_open")
+local homed = false
+local rui2 = { document = {}, onHome = function() homed = true end }
+local ri2 = P:new{ ui = rui2, path = "/x" }
+check("dispatcher event from reader closes book", ri2:onWeReadShelfOpen() and homed)
+S:saveSetting("open_on_start", false)
 -- BUG-06: empty (but readable) shelf -> empty grid, not the 未同步 dialog
 local orig_gs = fm.weread.library_db.getShelf
 fm.weread.library_db.getShelf = function() return {} end

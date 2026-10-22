@@ -1,27 +1,31 @@
-# Real微读 for Kindle（kindle-weread-shelf）
+# kindle-weread-shelf — 微信书架 wereadshelf.koplugin v0.3.4
 
-在越狱 Kindle Paperwhite 5 的 KOReader 上，一比一复刻**微信读书墨水屏版**的界面与体验。
+KOReader 插件：在 Kindle（PW5, 1236×1648）上复刻微信读书墨水屏风格——SimpleUI 底栏 3 Tab（发现 / 书架 / 我）、4 列封面书架、发现页、我的页、微信读书风格阅读菜单与字体面板。只读 weread.koplugin 的本地缓存，不改 weread / SimpleUI 文件。
 
-## 组成
-| 组件 | 版本 | 位置 |
-|---|---|---|
-| KOReader | v2026.07.x（kindlepw2 包） | 设备上已装 |
-| weread.koplugin（微信读书登录/书架/下载/进度同步） | 1.6.0 | `vendor/weread.koplugin` |
-| **wereadshelf.koplugin（本项目，自研）** | **0.3.6** | `src/wereadshelf.koplugin` |
-
-Real微读提供：自带「发现 / 书架 / 我」底部导航、4 列封面网格书架，以及微信读书风格阅读菜单和字体面板。只读 weread 缓存，不修改 weread、KOReader 或 Kindle 系统；无需安装 SimpleUI。
+依赖：KOReader v2026.07.1 + weread.koplugin 1.6.0 + simpleui.koplugin 2.7.5。
 
 ## 安装
-1. 退出 KOReader，USB 连接 Kindle，先备份 `koreader/settings/`。
-2. 把 `vendor/weread.koplugin` 和 `src/wereadshelf.koplugin` 两个文件夹拷到 `koreader/plugins/`。
-3. 启动 KOReader，打开「Real微读 → 登录、同步与管理书架」完成登录和同步，再点「打开 Real微读」。
+把 `src/wereadshelf.koplugin/` 整个文件夹拷到 Kindle 的 `koreader/plugins/`，详见 [src/INSTALL.md](src/INSTALL.md)。
 
-详细步骤见 `src/INSTALL.md`，代码结构见 `src/README.md`。
+## 进入 / 退出（v0.3.4 简化）
+| 操作 | 做法 |
+|---|---|
+| 首次开启 | KOReader 菜单 → 工具 → 微信书架 → 一键开启微信读书模式 → 重启 |
+| 之后自动进入 | 模式开启后（记住的设置），**启动 KOReader** 和 **合上书** 都直接回到书架，不再停在 SimpleUI / 文件浏览器 |
+| 返回 KOReader | 「我」→ **返回 KOReader**（或 我 → 阅读设置 → 返回 KOReader）。只在本次运行中暂停，不改任何设置 |
+| 再次进入 | KOReader 菜单首页（☰）→ **进入微信书架**；或点底栏任一 Tab；或手势/快捷动作 **「打开微信书架」**（设置 → 手势管理，可在阅读中使用，会先合上书） |
+| 完全关闭 / 回原生 | 「我」→ 退出到 Kindle / 恢复原生…（恢复 SimpleUI 底栏备份并关闭模式） |
 
-## 文档与测试
-- `SPEC.md` 需求，`UI-SPEC.md` 界面规范，`PLUGINS.md` 插件调研
-- `src/spec/` 离线测试：`sh spec/setup_deps.sh && luajit spec/test_*.lua`
-- `tests/` 测试用例与报告，`preview/` 模拟器截图
+底栏（发现 / 书架 / 我 + ‹ › 翻页）在书架、发现、我三页都显示；所有原有功能保留。
 
-## 许可
-vendor 下插件遵循各自许可证（weread.koplugin AGPL-3.0；仓库内保留的 SimpleUI 仅用于旧版兼容和测试）。
+## 目录
+- `src/wereadshelf.koplugin/` 插件；`src/spec/` 离线测试与模拟器预览；`SPEC.md` / `UI-SPEC.md` 规范；`vendor/` 依赖插件快照。
+
+## 测试
+```
+cd src && sh spec/setup_deps.sh && for t in test_shelf_data test_logic test_layout test_main_smoke; do luajit spec/$t.lua; done
+```
+
+## Changelog
+- **0.3.4** 进入/退出简化：微信读书模式开启时启动与合上书自动回书架；「我」页新增「返回 KOReader」（会话内暂停）；KOReader 菜单首页「进入微信书架」；Dispatcher 手势动作「打开微信书架」；点任一底栏 Tab 即恢复模式；开关更名「微信读书模式（启动/合上书时自动进书架）」。
+- **0.3.3** 见 tests/RETEST-v0.3.3.md。

@@ -81,7 +81,34 @@ function H:init()
     self.ui.weread = fake_weread()
     UIManager:scheduleIn(3, function()
         local P = self.ui.wereadshelf
-        if MODE == "discover" then P.showDiscover()
+        for i = #UIManager._window_stack, 1, -1 do -- drop first-run popups (box only)
+            local w = UIManager._window_stack[i].widget
+            if w ~= self.ui and w.name ~= "filemanager" then UIManager:close(w) end
+        end
+        if MODE == "fmmenu" then
+            if self.ui.menu then
+                local m = self.ui.menu
+                if not m.tab_item_table and m.setUpdateItemTable then m:setUpdateItemTable() end
+                m:onShowMenu()
+                UIManager:scheduleIn(0.5, function()
+                    local function find(w, d)
+                        if type(w) ~= "table" or d > 8 then return end
+                        if w.switchMenuTab and w.tab_item_table then return w end
+                        for _, c in ipairs(w) do local r = find(c, d + 1) if r then return r end end
+                    end
+                    for _, e in ipairs(UIManager._window_stack) do
+                        local tm = find(e.widget, 0)
+                        if tm then tm:switchMenuTab(#tm.tab_item_table) end
+                    end
+                end)
+            end
+        elseif MODE == "leave" then
+            P.showMe(); UIManager:scheduleIn(1, function() P.leaveToKOReader() end)
+            UIManager:scheduleIn(4, shot); return
+        elseif MODE == "settings" then
+            P.showMe(); UIManager:scheduleIn(1, function() P.showSettingsDialog() end)
+            UIManager:scheduleIn(4, shot); return
+        elseif MODE == "discover" then P.showDiscover()
         elseif MODE == "me" then P.showMe()
         else
             local g = P.showGrid()

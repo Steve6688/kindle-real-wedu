@@ -39,9 +39,9 @@ mkdir -p $P/zzwsprev.koplugin && cp "$HERE/main.lua" "$HERE/_meta.lua" $P/zzwspr
 S=$K/lib/koreader/settings/simpleui; mkdir -p $S
 printf 'return {\n ["reader_menu"] = true,\n}\n' > $K/lib/koreader/settings/wereadshelf.lua
 [ -f $S/sui_settings.lua ] || printf 'return {\n ["simpleui_bar_tabs"] = { "wereadshelf_discover", "wereadshelf_open", "wereadshelf_me" },\n ["simpleui_bar_mode"] = "icons",\n ["simpleui_bar_navpager_enabled"] = true,\n}\n' > $S/sui_settings.lua
-mkdir -p "$KW/preview"; cd $K/lib/koreader
-for mode in shelf shelf2 discover me reader font; do
+OUT="${WSPREV_DIR:-$KW/preview}"; mkdir -p "$OUT"; cd $K/lib/koreader
+for mode in ${WSPREV_MODES:-shelf shelf2 discover me reader font}; do
   SDL_VIDEODRIVER=dummy EMULATE_READER_W=1236 EMULATE_READER_H=1648 EMULATE_READER_DPI=300 \
-  WSPREV_MODE=$mode WSPREV_OUT="$KW/preview/$mode-1236x1648.png" timeout 60 ./luajit reader.lua -d $R >/dev/null 2>&1 || true
+  WSPREV_MODE=$mode WSPREV_OUT="$OUT/$mode-1236x1648.png" timeout 60 ./luajit reader.lua -d $R >/dev/null 2>&1 || true
 done
-ls -la "$KW/preview"
+ls -la "$OUT"

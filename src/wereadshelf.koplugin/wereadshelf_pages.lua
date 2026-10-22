@@ -3,6 +3,7 @@
 -- Content is only what
 -- weread 1.6.0 really provides; see main.lua for the data sources.
 local CenterContainer = require("ui/widget/container/centercontainer")
+local VerticalGroup   = require("ui/widget/verticalgroup")
 local Device          = require("device")
 local FrameContainer  = require("ui/widget/container/framecontainer")
 local Geom            = require("ui/geometry")
@@ -30,7 +31,7 @@ function Page:init()
     self.ges_events = { Tap = { GestureRange:new{ ges = "tap", range = function() return self.dimen end } } }
     if Device:hasKeys() then self.key_events = { Close = { { "Back" } } } end
     self.frame = FrameContainer:new{ bordersize = 0, padding = 0, margin = 0, background = U.WHITE,
-        width = self.W, height = self.avail + self.nav_h, U.hspan(0) }
+        width = self.W, height = self.top + self.avail + self.nav_h, U.hspan(0) }
     self[1] = self.frame
     self:refresh(true)
 end
@@ -41,18 +42,17 @@ function Page:refresh(no_dirty)
     local g = OverlapGroup:new{ dimen = Geom:new{ w = self.W, h = self.avail + self.nav_h } }
     self:build(g)
     if self.own_nav then
-        place(g, U.bottom_nav(self.nav_active, self.W), 0, self.avail)
-        self:hit(rect(0, self.avail, self.W / 3, self.nav_h), function()
-            if self.on_nav_discover then self.on_nav_discover() end
-        end)
-        self:hit(rect(self.W / 3, self.avail, self.W / 3, self.nav_h), function()
-            if self.on_nav_shelf then self.on_nav_shelf() end
-        end)
-        self:hit(rect(self.W * 2 / 3, self.avail, self.W / 3, self.nav_h), function()
-            if self.on_nav_me then self.on_nav_me() end
+        -- 0.3.3-style bar: 〈 发现 书架 我 〉 (arrows inactive on these pages)
+        place(g, U.bottom_nav(self.nav_active, self.W, false, false), 0, self.avail)
+        self:hit(rect(0, self.avail, self.W, self.nav_h), function(p)
+            local slot = U.NAV_SLOTS[U.nav_slot(p.x, self.W)]
+            if slot == "discover" and self.on_nav_discover then self.on_nav_discover()
+            elseif slot == "shelf" and self.on_nav_shelf then self.on_nav_shelf()
+            elseif slot == "me" and self.on_nav_me then self.on_nav_me() end
         end)
     end
-    self.frame[1] = g
+    -- status line on top, content below (taps are translated by self.top)
+    self.frame[1] = VerticalGroup:new{ align = "left", U.status_bar(self.W), g }
     if not no_dirty then UIManager:setDirty(self, "ui") end
 end
 
@@ -64,7 +64,7 @@ function Page:onTap(_, ges)
     local y = p.y - self.top
     for i = #self.hits, 1, -1 do
         local h = self.hits[i]
-        if U.inside(h.r, p.x, y) then h.fn(); return true end
+        if U.inside(h.r, p.x, y) then h.fn({ x = p.x, y = y }); return true end
     end
 end
 function Page:onClose() UIManager:close(self); return true end

@@ -16,8 +16,8 @@
   - `test_shelf_data.lua` 用 weread v1.6.0 真实代码 + 真 SQLite 测数据层（35 项）
   - `test_logic.lua` 滑杆/字体/统计纯函数（74 项）
   - `test_layout.lua` 网格分页/布局/命中/筛选（42 项）
-  - `test_main_smoke.lua` 桩模块跑 main.lua（不加载任何 SimpleUI 模块）：启动自动进入、网格路由、搜索、发现/我页、「我」9 项与开关、阅读菜单钩子、返回/再进入（50 项；不是真 UI）
-  - `preview/run_preview.sh` 只在 box 用：KOReader v2026.07.1 官方 Linux 版（SDL 模拟器 1236×1648@300dpi）（不装 SimpleUI）+ 假 weread（合成封面），自动生成示例 epub，截图 shelf/shelf2/discover/me/reader/font 到 `../preview/`。**不要拷到 Kindle。**
+  - `test_main_smoke.lua` 桩模块跑 main.lua（不加载任何 SimpleUI 模块）：启动自动进入、网格路由、搜索、发现/我页、「我」9 项与开关、阅读菜单钩子、返回/再进入（65 项：含「书架」重定向、书架同步、流畅翻页、阅读设置开关；不是真 UI）
+  - `preview/run_preview.sh` 只在 box 用：KOReader v2026.07.1 官方 Linux 版（SDL 模拟器 1236×1648@300dpi）（不装 SimpleUI）+ 假 weread（合成封面），自动生成示例 epub，截图 shelf/shelf2/discover/me/reader/font（及 pageturn 翻页计时）到 `../preview/`。**不要拷到 Kindle。**
 
 ## 设计要点（以源码为准；表中 SimpleUI 各行为 0.3.6 及以前的历史设计）
 | 需求 | 实现 | 依据（文件:行） |

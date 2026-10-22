@@ -34,7 +34,7 @@ PY
 rm -rf /tmp/korprev/sample.sdr
 P=$K/lib/koreader/plugins
 rm -rf $P/simpleui.koplugin $P/wereadshelf.koplugin $P/zzwsprev.koplugin
-cp -r "$ROOT/wereadshelf.koplugin" $P/
+[ -n "$WSPREV_NO_WS" ] || cp -r "$ROOT/wereadshelf.koplugin" $P/
 mkdir -p $P/zzwsprev.koplugin && cp "$HERE/main.lua" "$HERE/_meta.lua" $P/zzwsprev.koplugin/
 rm -rf $K/lib/koreader/settings/simpleui
 rm -f $K/lib/koreader/settings/wereadshelf.lua # fresh install: no plugin settings at all

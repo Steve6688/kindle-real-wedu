@@ -5,7 +5,8 @@
 --
 -- weread 1.6.0 entry points used (public methods on the plugin instance,
 -- mixed in at weread main.lua:222-233):
---   openBookshelf()   main.lua:33
+--   openBookshelf()   main.lua:33  (0.3.8: redirected to Real微读's shelf)
+--   refreshBookshelf() weread/ui/library.lua:150 (login if needed + shelf sync)
 --   showSearch()      weread/ui/library.lua:1640   (online WeRead search dialog)
 --   searchWithUI(kw)  weread/ui/library.lua:1673
 --   showReadStats()   weread/ui/read_report.lua:238 (reading statistics)
@@ -56,7 +57,7 @@ local function S() return WeReadShelf._settings_override or settings() end
 local function on(key) return S():readSetting(key) ~= false end
 WeReadShelf.isOn = on
 WeReadShelf.ENTER_TEXT = "进入 Real微读"
-WeReadShelf.VERSION = "0.3.7"
+WeReadShelf.VERSION = "0.3.8"
 
 -- Put 「进入 Real微读」 at the top of KOReader's ☰ (main) menu tab instead of
 -- after Exit (items missing from the order table are appended at the end).
@@ -100,6 +101,10 @@ function WeReadShelf:init()
         end
     end
     self:onDispatcherRegisterActions()
+    -- v0.3.8: every weread 「书架」 entry point opens Real微读's shelf.
+    if self.ui and self.ui.weread then pcall(WeReadShelf.redirectWereadShelf, self.ui.weread) end
+    -- v0.3.8: smooth page turns (no animation, fewer full flashes); session only.
+    if self.ui and self.ui.document then pcall(WeReadShelf.applySmoothTurns) end
     -- v0.3.6 faster weread downloads (default ON; 更多设置 → 快速下载).
     if on("fast_download") then
         local ok, e = pcall(FastDL.install)
@@ -183,7 +188,7 @@ function WeReadShelf:addToMainMenu(menu_items)
         sub_item_table = {
             { text = "打开 Real微读", callback = function() WeReadShelf.showGrid() end },
             {
-                text = "登录、同步与管理书架",
+                text = "登录与同步书架",
                 callback = function() WeReadShelf.openWereadManagement() end,
                 separator = true,
             },
@@ -192,31 +197,128 @@ function WeReadShelf:addToMainMenu(menu_items)
                 checked_func = function() return on("reader_menu") end,
                 callback = function() WeReadShelf.toggleSetting("reader_menu") end,
             },
-            { text = "更多设置…", callback = function() WeReadShelf.showMoreSettings() end },
+            { text = "阅读设置…", callback = function() WeReadShelf.showSettingsDialog() end },
         },
     }
 end
 
--- Direct route for account, login, sync and shelf management. The weread
--- plugin owns these flows; Real微读 simply opens them without another menu hop.
-function WeReadShelf.openWereadManagement()
+-- v0.3.8: weread's own shelf list never shows. Every way into it on a weread
+-- instance (openBookshelf / launch / showBookshelf: ☰ 微信读书 → 书架, the
+-- 「微信读书·书架」 gesture, the end-of-book dialog's 书架 button, third-party
+-- launchers, and refreshBookshelf's result after login / sync) ends in
+-- showBookshelf or showShelfView (weread/ui/library.lua:71,150,365); both
+-- are replaced on the instance so they open Real微读's shelf instead. The
+-- public-account list (mode "public_account") is not a 书架 and stays.
+-- In a book, the book is closed first (the file manager re-init then shows
+-- the shelf, exactly like closing a book).
+function WeReadShelf.toRealShelf()
+    local RUI = package.loaded["apps/reader/readerui"]
+    local r = RUI and RUI.instance
+    if r and r.document then
+        Data._paused = false
+        UIManager:nextTick(function() WeReadShelf.enter(r) end)
+        return true
+    end
+    UIManager:nextTick(function() WeReadShelf.showGrid() end)
+    return true
+end
+
+function WeReadShelf.redirectWereadShelf(weread)
+    if type(weread) ~= "table" or weread._wrs_redirect then return false end
+    if type(weread.showShelfView) ~= "function" and type(weread.showBookshelf) ~= "function" then return false end
+    weread._wrs_redirect = true
+    local orig_view = weread.showShelfView
+    weread._wrs_orig_showShelfView = orig_view
+    weread.showShelfView = function(self_w, mode, keyword, old_view, options)
+        if mode == "public_account" and orig_view then
+            return orig_view(self_w, mode, keyword, old_view, options)
+        end
+        if old_view then pcall(UIManager.close, UIManager, old_view) end
+        if self_w.shelf_view == old_view then self_w.shelf_view = nil end
+        return WeReadShelf.toRealShelf()
+    end
+    weread._wrs_orig_showBookshelf = weread.showBookshelf
+    weread.showBookshelf = function(self_w)
+        local cached
+        pcall(function() cached = self_w.library_db and self_w.library_db:getShelf() end)
+        if (type(cached) == "table" and #cached > 0) or type(self_w.refreshBookshelf) ~= "function" then
+            return WeReadShelf.toRealShelf()
+        end
+        -- nothing cached yet: weread's sync (QR login first when needed);
+        -- its result goes through showShelfView -> Real微读
+        return self_w:refreshBookshelf()
+    end
+    -- after a successful QR login: fetch the shelf and show it in Real微读
+    if type(weread.refreshLoginMenu) == "function" then
+        local orig_login = weread.refreshLoginMenu
+        local was = Data.is_logged_in(weread)
+        weread.refreshLoginMenu = function(self_w, ...)
+            local r = orig_login(self_w, ...)
+            local now = Data.is_logged_in(self_w)
+            if now and not was and type(self_w.refreshBookshelf) == "function" then
+                UIManager:scheduleIn(0.5, function() pcall(self_w.refreshBookshelf, self_w) end)
+            end
+            was = now
+            return r
+        end
+    end
+    return true
+end
+
+-- 书架同步 / 导入 / 登录: weread's sync (and QR login when needed); the
+-- result is shown in Real微读's shelf (see redirectWereadShelf).
+function WeReadShelf.syncShelf()
     local weread = Data.find_weread()
-    if weread and type(weread.openBookshelf) == "function" then
-        local ok, err = pcall(weread.openBookshelf, weread)
-        if ok then return true end
-        info("微信读书打开失败：" .. tostring(err))
+    if not weread then
+        info("未找到 weread.koplugin，请先安装或启用微信读书插件。")
         return false
     end
-    info("未找到 weread.koplugin，请先安装或启用微信读书插件。")
+    WeReadShelf.redirectWereadShelf(weread)
+    local fn = weread.refreshBookshelf or weread.openBookshelf
+    if type(fn) ~= "function" then info("微信读书插件版本不支持书架同步。"); return false end
+    local ok, err = pcall(fn, weread)
+    if not ok then info("书架同步失败：" .. tostring(err)); return false end
+    return true
+end
+-- older name (☰ menu, tests)
+WeReadShelf.openWereadManagement = WeReadShelf.syncShelf
+
+-- v0.3.8 流畅翻页 (default on, session only; nothing is written to KOReader's
+-- settings): no page-turn animation (readerview.lua onPageChangeAnimation) and,
+-- when the user kept KOReader's default (6), a full e-ink refresh every 12
+-- pages instead of 6 (UIManager.FULL_REFRESH_COUNT, uimanager.lua:17,741).
+-- Page turns keep KOReader's "partial" waveform (text stays crisp; "fast"/A2
+-- would ghost and look jagged on PW5).
+WeReadShelf.SMOOTH_REFRESH_COUNT = 12
+function WeReadShelf.applySmoothTurns()
+    local okv, RV = pcall(require, "apps/reader/modules/readerview")
+    if on("smooth_turns") then
+        if okv and type(RV) == "table" and not RV._wrs_orig_anim then
+            RV._wrs_orig_anim = RV.onPageChangeAnimation or false
+            RV.onPageChangeAnimation = function() end
+        end
+        local G = rawget(_G, "G_reader_settings")
+        local user_rate = G and G:readSetting("full_refresh_count")
+        if user_rate == nil and not (G and G:isTrue("night_mode")) then
+            if UIManager._wrs_orig_rate == nil then UIManager._wrs_orig_rate = UIManager.FULL_REFRESH_COUNT or false end
+            UIManager.FULL_REFRESH_COUNT = WeReadShelf.SMOOTH_REFRESH_COUNT
+        end
+        return true
+    end
+    if okv and type(RV) == "table" and RV._wrs_orig_anim ~= nil then
+        RV.onPageChangeAnimation = RV._wrs_orig_anim or nil
+        RV._wrs_orig_anim = nil
+    end
+    if UIManager._wrs_orig_rate ~= nil then
+        UIManager.FULL_REFRESH_COUNT = UIManager._wrs_orig_rate or nil
+        UIManager._wrs_orig_rate = nil
+    end
     return false
 end
 
 function WeReadShelf.toggleSetting(key)
     S():saveSetting(key, not on(key)); S():flush()
-    if current_page and active_tab == QA_ME and current_page.refresh then
-        current_page.rows = WeReadShelf.moreSettingsItems() -- update ✓ marks in place
-        pcall(current_page.refresh, current_page)
-    end
+    if key == "smooth_turns" then pcall(WeReadShelf.applySmoothTurns) end
     if key == "reader_menu" then info("已保存，下次打开书时生效。") end
 end
 
@@ -236,47 +338,48 @@ function WeReadShelf.confirmExitToKindle()
     })
 end
 
--- Older names kept for callers; the same items are the 「我」 rows.
-function WeReadShelf.showSettingsDialog() return WeReadShelf.showMoreSettings() end
-
--- 「我」 rows (0.3.7). Also offered as a dialog for the KOReader tools menu.
-function WeReadShelf.moreSettingsItems()
-    local weread = Data.find_weread()
-    local function mark(k) return on(k) and "✓ " or "　" end
+-- 「我」 rows, as in 0.3.3 (+ 返回 KOReader, which 0.3.5 added).
+function WeReadShelf.meRows()
     return {
-        { text = "阅读时长统计", fn = function() call_weread("showReadStats") end },
+        { text = "阅读时长统计", fn = function() call_weread("showReadStats") end },   -- read_report.lua:238
         { text = "我的笔记", fn = function()
             info("weread 1.6.0 没有「全部笔记」列表接口。\n打开一本书后：阅读菜单「更多」→ 书签列表，"
                 .. "或 weread 菜单「划线和想法管理」查看该书笔记。") end },
-        { text = "书架同步 · 登录与管理", fn = function() WeReadShelf.openWereadManagement() end },
-        { text = "刷新本周阅读数据", fn = function()
-            if not WeReadShelf.refreshStats(weread, function(good)
-                local c = WeReadShelf.statsCache()
-                info(good and ("本周阅读 " .. tostring(c.week_min or 0) .. " 分钟") or "刷新失败（未联网或服务器无数据）")
-            end, false) then info(Data.MESSAGES[Data.ERR_NO_PLUGIN]) end
-        end },
-        { text = mark("reader_menu") .. "Real微读阅读菜单", fn = function() WeReadShelf.toggleSetting("reader_menu") end },
-        { text = mark("fast_download") .. "快速下载（3 章并行）", fn = function()
-            WeReadShelf.toggleSetting("fast_download")
-            info("已保存，重启 KOReader 后生效。") end },
-        { text = "KOReader 设置（完整菜单）", fn = function() WeReadShelf.openKOReaderMenu() end },
-        { text = "退出到 Kindle…", fn = function() WeReadShelf.confirmExitToKindle() end },
-        { text = "返回 KOReader", bold = true, fn = function() WeReadShelf.leaveToKOReader() end },
+        { text = "书架同步", fn = function() WeReadShelf.syncShelf() end },
+        { text = "阅读设置", fn = function() WeReadShelf.showSettingsDialog() end },
+        { text = "退出到 Kindle", bold = true, fn = function() WeReadShelf.confirmExitToKindle() end },
+        { text = "返回 KOReader", fn = function() WeReadShelf.leaveToKOReader() end },
     }
 end
 
-function WeReadShelf.showMoreSettings()
+-- 「阅读设置」 dialog (0.3.3 look): switches + KOReader's full menu.
+function WeReadShelf.settingsItems()
+    local function mark(k) return on(k) and "✓ " or "　" end
+    return {
+        { text = mark("reader_menu") .. "Real微读阅读菜单", fn = function() WeReadShelf.toggleSetting("reader_menu") end },
+        { text = mark("fast_download") .. "快速下载（3–5 章并行）", fn = function()
+            WeReadShelf.toggleSetting("fast_download")
+            info("已保存，重启 KOReader 后生效。") end },
+        { text = mark("smooth_turns") .. "流畅翻页（无动画 · 每 12 页全刷）", fn = function()
+            WeReadShelf.toggleSetting("smooth_turns") end },
+        { text = "KOReader 设置（完整菜单）", fn = function() WeReadShelf.openKOReaderMenu() end },
+    }
+end
+-- 0.3.7 name kept for callers
+WeReadShelf.moreSettingsItems = WeReadShelf.settingsItems
+
+function WeReadShelf.showSettingsDialog()
     local ButtonDialog = require("ui/widget/buttondialog")
     local dlg
     local buttons = {}
-    for _, it in ipairs(WeReadShelf.moreSettingsItems()) do
-        buttons[#buttons + 1] = { { text = it.text, align = "left", callback = function() UIManager:close(dlg); it.fn() end } }
+    for _, it in ipairs(WeReadShelf.settingsItems()) do
+        buttons[#buttons + 1] = { { text = it.text, callback = function() UIManager:close(dlg); it.fn() end } }
     end
-    buttons[#buttons + 1] = { { text = "关闭", callback = function() UIManager:close(dlg) end } }
-    dlg = ButtonDialog:new{ title = "更多设置", buttons = buttons }
+    dlg = ButtonDialog:new{ title = "阅读设置", buttons = buttons }
     UIManager:show(dlg)
     return dlg
 end
+WeReadShelf.showMoreSettings = WeReadShelf.showSettingsDialog
 
 -- KOReader's own full menu, on top of the file manager (our pages close).
 function WeReadShelf.openKOReaderMenu()
@@ -353,8 +456,8 @@ local function show_error(weread, err)
             text = msg,
             ok_text = "打开微信读书",
             ok_callback = function()
-                -- weread/main.lua:33 — triggers QR login if needed (common.lua:182)
-                pcall(weread.openBookshelf, weread)
+                -- weread sync (QR login first if needed, common.lua:182) -> Real微读 shelf
+                WeReadShelf.syncShelf()
             end,
         })
     else
@@ -424,7 +527,7 @@ function WeReadShelf.showDiscover()
     add("搜索书城（书名 / 作者）", "showSearch")          -- library.lua:1640
     add("公众号文章", "showMPShelfPage")                   -- library.lua:1003
     add("微信读书收藏", "showWereadCollection")            -- menu.lua:787
-    add("刷新 / 管理书架", "openBookshelf")                 -- main.lua:33
+    entries[#entries + 1] = { text = "刷新 / 管理书架", fn = function() WeReadShelf.syncShelf() end }
     local page = Pages.Discover:new{
         books = books, entries = entries,
         on_nav_discover = function() WeReadShelf.showDiscover() end,
@@ -483,10 +586,8 @@ function WeReadShelf.showMe()
     page = Pages.Me:new{
         account_name = Data.is_logged_in(weread) and (account.name or "") or "",
         stats = stats(),
-        account_sub = Data.is_logged_in(weread) and "已登录 · 微信读书" or "未登录",
-        footer = "Real微读 " .. (WeReadShelf.VERSION or ""),
-        -- v0.3.7: every item sits directly on 「我」 (no 更多设置 level)
-        rows = WeReadShelf.moreSettingsItems(),
+        show_stats = true, -- 0.3.3 look: 数据卡 (本周阅读 / 读完 / 笔记)
+        rows = WeReadShelf.meRows(),
         on_nav_discover = function() WeReadShelf.showDiscover() end,
         on_nav_shelf = function() WeReadShelf.showGrid() end,
         on_nav_me = function() WeReadShelf.showMe() end,
@@ -501,6 +602,13 @@ function WeReadShelf.showMe()
         end,
     }
     show_page(page, QA_ME)
+    -- 0.3.3: refresh when online and the cache is older than 30 min (silent offline)
+    local c = WeReadShelf.statsCache()
+    if not c.at or os.time() - c.at > 1800 then
+        WeReadShelf.refreshStats(weread, function()
+            if current_page == page then page.stats = stats(); page:refresh() end
+        end, true)
+    end
     return page
 end
 
@@ -535,6 +643,7 @@ end
 function WeReadShelf.showGrid()
     Data._paused = false
     local weread = Data.find_weread()
+    if weread then pcall(WeReadShelf.redirectWereadShelf, weread) end
     local books, err = Data.get_shelf(weread, { allow_empty = true }) -- BUG-06
     if not books then show_error(weread, err); return end
     ShelfGrid = ShelfGrid or require("wereadshelf_grid")
@@ -559,7 +668,7 @@ function WeReadShelf.showGrid()
             local ok, e = Data.open_book(weread, book.bookId)
             if not ok then info(Data.MESSAGES[e] or ("打开失败：" .. tostring(e))) end
         end,
-        on_import = function() call_weread("openBookshelf") end, -- BUG-07: errors are shown
+        on_import = function() WeReadShelf.syncShelf() end, -- 0.3.8: sync -> back to this shelf
         on_select = function()
             info("「选择」（批量管理）计划在二期提供。\n现在可点「导入」进入微信读书书架管理。")
         end,
@@ -593,7 +702,7 @@ function WeReadShelf.showShelfStatic()
             text = "↻ 在微信读书中刷新 / 管理书架",
             callback = function()
                 UIManager:close(menu)
-                call_weread("openBookshelf")
+                WeReadShelf.syncShelf()
             end,
         },
     }

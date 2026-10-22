@@ -57,36 +57,83 @@ end
 
 function U.hspan(w) return HorizontalSpan:new{ width = w } end
 
--- Real微读 bottom navigation (发现 / 书架 / 我, no arrows), drawn by every page;
--- keep it inside the plugin so the primary navigation never disappears.
-function U.nav_height() return math.max(U.px(128), 112) end
+-- 0.3.3 look, drawn by Real微读 itself (SimpleUI is gone since 0.3.7):
+-- a thin top status line (time left, battery right) and an icon-only bottom
+-- bar ‹ 发现 书架 我 › with a hairline on top and a thick marker over the
+-- active tab. Arrows are black when that page direction exists, else gray.
+U.MID_GRAY = Blitbuffer.Color8(0x99)
+function U.status_h() return U.px(82) end
+function U.nav_height() return U.px(226) end
+U.NAV_SLOTS = { "prev", "discover", "shelf", "me", "next" }
+local function nav_margin() return U.px(47) end
+-- slot index (1..5) for an x coordinate
+function U.nav_slot(x, width)
+    width = width or Screen:getWidth()
+    local m = nav_margin()
+    local sw = (width - 2 * m) / 5
+    local i = math.floor((x - m) / sw) + 1
+    return math.max(1, math.min(5, i))
+end
 
-function U.bottom_nav(active, width)
+function U.status_bar(width)
+    width = width or Screen:getWidth()
+    local h = U.status_h()
+    local m = nav_margin()
+    local t = U.text(os.date("%H:%M"), U.px(34))
+    local pct
+    pcall(function()
+        local p = Device.getPowerDevice and Device:getPowerDevice()
+        pct = p and p.getCapacity and p:getCapacity()
+    end)
+    local right = HorizontalGroup:new{ align = "center" }
+    -- small upright battery glyph (black body, cap on top)
+    local bw, bh = U.px(18), U.px(30)
+    right[#right + 1] = VerticalGroup:new{ align = "center", U.hline(U.px(8), U.px(4)), U.hline(bw, bh) }
+    right[#right + 1] = U.hspan(U.px(6))
+    right[#right + 1] = U.text((pct and tostring(math.floor(pct)) or "—") .. "%", U.px(34))
+    local rw = right:getSize().w
+    local row = HorizontalGroup:new{ align = "center",
+        U.hspan(m), t, U.hspan(math.max(0, width - 2 * m - t:getSize().w - rw)), right, U.hspan(m) }
+    return CenterContainer:new{ dimen = Geom:new{ w = width, h = h }, row }
+end
+
+-- active: "discover" | "shelf" | "me"; has_prev / has_next tint the arrows.
+function U.bottom_nav(active, width, has_prev, has_next)
     width = width or Screen:getWidth()
     local h = U.nav_height()
-    local tabs = {
-        { id = "discover", label = "发现", icon = "tab_discover" },
-        { id = "shelf", label = "书架", icon = "tab_shelf" },
-        { id = "me", label = "我", icon = "tab_me" },
-    }
-    local cells = HorizontalGroup:new{ align = "top" }
-    local base = math.floor(width / #tabs)
-    for i, tab in ipairs(tabs) do
-        local w = i == #tabs and (width - base * (i - 1)) or base
-        local selected = tab.id == active
-        local icon_name = tab.icon .. (selected and "_active" or "")
-        local icon_size = U.px(48)
-        local content = VerticalGroup:new{ align = "center",
-            VerticalSpan:new{ width = U.px(14) },
-            U.icon(icon_name, icon_size),
-            VerticalSpan:new{ width = U.px(5) },
-            U.text(tab.label, U.px(25), selected),
-        }
-        cells[#cells + 1] = CenterContainer:new{ dimen = Geom:new{ w = w, h = h - 2 }, content }
+    local m = nav_margin()
+    local sw = math.floor((width - 2 * m) / 5)
+    local line_w = width - 2 * m
+    local cells = HorizontalGroup:new{ align = "center", U.hspan(m) }
+    local cell_h = h - U.px(10)
+    for _, id in ipairs(U.NAV_SLOTS) do
+        local content
+        if id == "prev" or id == "next" then
+            local w = U.text(id == "prev" and "〈" or "〉", U.px(60))
+            w.fgcolor = ((id == "prev" and has_prev) or (id == "next" and has_next)) and U.BLACK or U.MID_GRAY
+            content = w
+        else
+            content = U.icon("tab_" .. id .. (id == active and "_active" or ""), U.px(80))
+        end
+        cells[#cells + 1] = CenterContainer:new{ dimen = Geom:new{ w = sw, h = cell_h }, content }
     end
-    return FrameContainer:new{
-        bordersize = 1, padding = 0, margin = 0, color = U.BLACK, background = U.WHITE,
-        width = width, height = h, cells,
+    -- marker row: hairline across, thick bar under the active slot
+    local idx = ({ discover = 2, shelf = 3, me = 4 })[active]
+    local marker = HorizontalGroup:new{ align = "top", U.hspan(m) }
+    if idx then
+        local before = (idx - 1) * sw
+        marker[#marker + 1] = U.hline(before, 2)
+        marker[#marker + 1] = U.hline(sw, U.px(8))
+        marker[#marker + 1] = U.hline(line_w - before - sw, 2)
+    else
+        marker[#marker + 1] = U.hline(line_w, 2)
+    end
+    return FrameContainer:new{ bordersize = 0, padding = 0, margin = 0, background = U.WHITE,
+        width = width, height = h,
+        VerticalGroup:new{ align = "left",
+            FrameContainer:new{ bordersize = 0, padding = 0, margin = 0, height = U.px(10), width = width, marker },
+            cells,
+        },
     }
 end
 
@@ -129,9 +176,10 @@ function U.inside(g, x, y)
     return g and x >= g.x and x < g.x + g.w and y >= g.y and y < g.y + g.h
 end
 
--- Content area: the whole screen (the bottom bar is drawn by each page).
+-- Content area below the status line (the bottom bar is drawn by each page).
 function U.content_area()
-    return 0, Screen:getHeight()
+    local top = U.status_h()
+    return top, Screen:getHeight() - top
 end
 
 return U

@@ -47,9 +47,9 @@ local fails, n = 0, 0
 local function check(name, c) n = n + 1; print((c and "ok   " or "FAIL ") .. name); if not c then fails = fails + 1 end end
 check("main menu has four focused actions", menu_items.wereadshelf ~= nil
     and #menu_items.wereadshelf.sub_item_table == 4
-    and menu_items.wereadshelf.sub_item_table[4].text == "更多设置…"
+    and menu_items.wereadshelf.sub_item_table[4].text == "阅读设置…"
     and menu_items.wereadshelf.sub_item_table[1].text == "打开 Real微读"
-    and menu_items.wereadshelf.sub_item_table[2].text == "登录、同步与管理书架")
+    and menu_items.wereadshelf.sub_item_table[2].text == "登录与同步书架")
 check("v0.3.5 default ON: fresh install startup opens Real微读 (no weread yet -> its notice)",
     #shown == 1 and tostring(shown[1].text):find("weread.koplugin") ~= nil)
 check("v0.3.7 no SimpleUI writes / backups", S:readSetting("preset_backup") == nil and S:readSetting("landing_backup") == nil)
@@ -134,27 +134,33 @@ P.showMe()
 local mp = shown[#shown]
 check("我 page shown, discover closed", getmetatable(mp).__index == Pages.Me and closed[#closed] == dp)
 check("我 account name", mp.account_name == "小明")
-check("v0.3.7 我 rows = all items directly (no 更多设置 level)", #mp.rows == 9 and mp.footer == "Real微读 0.3.7")
-check("v0.3.6 我 does not hit the network on open", _G.stats_mode == nil)
+check("v0.3.8 我 = 0.3.3 look: 数据卡 + 5 rows + 返回 KOReader", mp.show_stats == true and #mp.rows == 6
+    and mp.rows[1].text == "阅读时长统计" and mp.rows[2].text == "我的笔记" and mp.rows[3].text == "书架同步"
+    and mp.rows[4].text == "阅读设置" and mp.rows[5].text == "退出到 Kindle" and mp.rows[5].bold
+    and mp.rows[6].text == "返回 KOReader" and mp.footer == nil)
+check("v0.3.8 我 refreshes weekly stats on open (0.3.3, silent offline)", _G.stats_mode == "weekly"
+    and mp.stats and mp.stats.week_min == 61)
 local function find_btn(page, pat)
     for _, row in ipairs(page.rows) do if row.text:find(pat) then return { callback = row.fn, text = row.text, bold = row.bold } end end
 end
 local md = mp
-check("我 keeps every feature", find_btn(md, "阅读时长统计") and find_btn(md, "我的笔记")
-    and find_btn(md, "书架同步") and find_btn(md, "Real微读阅读菜单") and find_btn(md, "快速下载")
-    and find_btn(md, "KOReader 设置") and find_btn(md, "退出到 Kindle") and find_btn(md, "返回 KOReader")
-    and not find_btn(md, "更多设置") and not find_btn(md, "SimpleUI"))
-check("last row = 返回 KOReader (bold)", mp.rows[9].text == "返回 KOReader" and mp.rows[9].bold)
-local before_rows = mp.rows
-find_btn(md, "Real微读阅读菜单").callback()
-check("switch toggles and 我 rows update in place", mp.rows ~= before_rows and (mp.refreshed or 0) >= 1
-    and mp.rows[5].text:find("　") == 1)
-find_btn(mp, "Real微读阅读菜单").callback()
+-- 阅读设置 dialog: switches incl. 快速下载 and 流畅翻页
+find_btn(md, "阅读设置").callback()
+local sd = shown[#shown]
+local function dbtn(dlg, pat) for _, row in ipairs(dlg.buttons) do if row[1].text:find(pat) then return row[1] end end end
+check("阅读设置 dialog keeps switches", sd.title == "阅读设置" and dbtn(sd, "Real微读阅读菜单") and dbtn(sd, "快速下载")
+    and dbtn(sd, "流畅翻页") and dbtn(sd, "KOReader 设置") and not dbtn(sd, "SimpleUI"))
+check("switches default ON (✓)", dbtn(sd, "快速下载").text:find("✓") == 1 and dbtn(sd, "流畅翻页").text:find("✓") == 1)
+dbtn(sd, "快速下载").callback()
+check("快速下载 toggles off and is saved", S:readSetting("fast_download") == false)
+P.toggleSetting("fast_download")
+check("快速下载 back on", P.isOn("fast_download"))
 find_btn(md, "阅读时长统计").callback(); check("阅读时长统计 -> showReadStats", calls.stats)
 find_btn(md, "我的笔记").callback(); check("我的笔记 -> honest notice", tostring(shown[#shown].text):find("没有") ~= nil)
-find_btn(md, "刷新本周阅读").callback()
-check("刷新本周阅读 -> weekly stats", _G.stats_mode == "weekly" and S:readSetting("stats_cache").week_min == 61
-    and S:readSetting("stats_cache").notes == 12 and tostring(shown[#shown].text):find("61"))
+_G.stats_mode = nil
+mp.on_refresh_stats()
+check("数据卡 tap -> weekly stats", _G.stats_mode == "weekly" and S:readSetting("stats_cache").week_min == 61
+    and S:readSetting("stats_cache").notes == 12)
 -- BUG-04: refresh returning nil / raising -> failure reported, cache kept
 local old_client = fm.weread.client
 local got
@@ -168,6 +174,69 @@ check("BUG-04 cache kept after failure", S:readSetting("stats_cache").week_min =
 fm.weread.client = old_client
 -- active icon
 
+-- v0.3.8: every weread 「书架」 entry -> Real微读's shelf
+local W = { library_db = fm.weread.library_db, settings = fm.weread.settings, shelf_view = "OLD",
+    showShelfView = function() _G.weread_list_shown = true end,
+    showBookshelf = function() _G.weread_list_shown = true end,
+    refreshBookshelf = function(self_w) _G.synced = true; self_w:showShelfView("books") end,
+    refreshLoginMenu = function() end }
+W.openBookshelf = function(self_w) return self_w:showBookshelf() end
+check("redirect installs once", P.redirectWereadShelf(W) and not P.redirectWereadShelf(W))
+local function run_ticks() local t = ticks; ticks = {}; for _, f in ipairs(t) do f() end end
+ticks = {}; _G.weread_list_shown = nil
+local ns = #shown; W:openBookshelf(); run_ticks()
+check("weread openBookshelf -> Real微读 grid, not weread list", not _G.weread_list_shown and shown[#shown].books ~= nil and #shown > ns)
+_G.weread_list_shown = nil; W:showShelfView("books", nil, "OLDVIEW"); run_ticks()
+check("weread showShelfView(books) (after sync/refresh) -> Real微读 grid + old view closed",
+    not _G.weread_list_shown and (function() for _, c in ipairs(closed) do if c == "OLDVIEW" then return true end end end)()
+    and shown[#shown].books ~= nil)
+_G.weread_list_shown = nil; W:showShelfView("public_account")
+check("public-account list is not a 书架: stays weread's", _G.weread_list_shown == true)
+-- empty cache -> weread sync (login if needed), result into Real微读
+local orig_shelf = W.library_db
+W.library_db = { getShelf = function() return {} end, accountKey = function() return "k" end }
+_G.synced, _G.weread_list_shown = nil, nil; W:showBookshelf(); run_ticks()
+check("no cache yet -> weread sync, then Real微读 shelf", _G.synced and not _G.weread_list_shown)
+W.library_db = orig_shelf
+-- in a book: 书架 (end-of-book dialog / gesture) closes the book first
+local homed2 = false
+package.loaded["apps/reader/readerui"] = { instance = { document = {}, onHome = function() homed2 = true end } }
+W:showBookshelf(); run_ticks()
+check("in a book: weread 书架 -> close book (FM re-init shows Real微读)", homed2)
+package.loaded["apps/reader/readerui"] = nil
+-- grid 导入 / 我 书架同步 / discover 刷新 -> sync -> Real微读
+fm.weread.refreshBookshelf = function() _G.synced2 = (_G.synced2 or 0) + 1 end
+fm.weread._wrs_redirect = nil
+fm.weread.showShelfView = function() _G.weread_list_shown = true end
+P.showGrid(); local gg = shown[#shown]; gg.on_import()
+find_btn(md, "书架同步").callback()
+check("导入 and 书架同步 -> weread sync (result shown in Real微读)", _G.synced2 == 2)
+check("fm weread instance patched by showGrid", fm.weread._wrs_redirect == true)
+-- after QR login -> shelf fetched and shown in Real微读
+local W2 = { library_db = { accountKey = function() return _G.logged and "k" or nil end, getShelf = function() return {} end },
+    settings = { is_api_configured = function() return _G.logged == true end },
+    showShelfView = function() end, showBookshelf = function() end,
+    refreshBookshelf = function() _G.login_synced = true end, refreshLoginMenu = function() end }
+P.redirectWereadShelf(W2); ticks = {}
+_G.logged = true; W2:refreshLoginMenu(); run_ticks()
+check("after login -> shelf sync into Real微读", _G.login_synced == true)
+-- v0.3.8 流畅翻页
+local RV = {}; package.loaded["apps/reader/modules/readerview"] = RV
+RV.onPageChangeAnimation = function() _G.animated = true end
+_G.G_reader_settings = { readSetting = function() return nil end, isTrue = function() return false end }
+local UIM = package.loaded["ui/uimanager"]; UIM.FULL_REFRESH_COUNT = 6
+check("流畅翻页 default on", P.applySmoothTurns() == true)
+_G.animated = nil; RV.onPageChangeAnimation()
+check("流畅翻页: no page-turn animation", not _G.animated)
+check("流畅翻页: full refresh every 12 pages (default 6)", UIM.FULL_REFRESH_COUNT == 12)
+P.toggleSetting("smooth_turns")
+RV.onPageChangeAnimation()
+check("流畅翻页 off restores KOReader behaviour", _G.animated and UIM.FULL_REFRESH_COUNT == 6)
+P.toggleSetting("smooth_turns")
+_G.G_reader_settings = { readSetting = function(_, k) if k == "full_refresh_count" then return 3 end end, isTrue = function() return false end }
+P.toggleSetting("smooth_turns"); P.toggleSetting("smooth_turns")
+check("流畅翻页 keeps a user-chosen refresh rate", UIM.FULL_REFRESH_COUNT ~= 12 or UIM._wrs_orig_rate == nil)
+_G.G_reader_settings = nil
 P.exitToKindle(); check("exit to Kindle = KOReader Exit event", broadcast[#broadcast] and broadcast[#broadcast].name == "Exit")
 -- reader hook
 local zones

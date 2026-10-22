@@ -443,7 +443,7 @@ function RM:onTap(_, ges)
     end
     if self.font_open and not U.inside(self.panel_rect, p.x, p.y) then
         self.font_open = false
-        self:refresh("ui")
+        self:refresh("full")
         return true
     end
     self:close()
@@ -475,9 +475,14 @@ function RM:showBrightness()
     end
 end
 function RM:toggleFont()
-    -- v0.3.6: 「A」 opens the 阅读设置 sheet (works for PDF too: 光 / 翻页);
-    -- the full font panel moved to 更多设置.
-    if self.sheet_open then self:closeSheet() else self:openSheet() end
+    -- v0.3.8: back to the 0.3.3 look: 「A」 opens the 字体设置 panel directly
+    -- (the 0.3.6 阅读设置 sheet is kept as RM:openSheet but not shown).
+    if not self:isRolling() then
+        -- PDF/DjVu/CBZ: no reflowable font settings; open KOReader's own bottom config instead
+        self:close(); send(self.ui, "ShowConfigMenu"); return
+    end
+    self.font_open = not self.font_open
+    self:refresh("full")
 end
 function RM:toggleBookmark()
     send(self.ui, "ToggleBookmark")
@@ -523,7 +528,7 @@ function RM:showMore()
                 send(self.ui, "ShowBookInfo")
             end),
             item("刷新屏幕", function() self:close(); UIManager:setDirty(nil, "full") end),
-            item("KOReader 菜单与设置", function() self:close(); send(self.ui, "ShowMenu") end),
+            item("KOReader 原生菜单", function() self:close(); send(self.ui, "ShowMenu") end),
         },
     }
     UIManager:show(dlg)

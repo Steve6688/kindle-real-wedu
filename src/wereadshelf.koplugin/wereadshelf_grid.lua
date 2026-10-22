@@ -60,8 +60,8 @@ function ShelfGrid:init()
     self.dimen = Geom:new{ x = 0, y = 0, w = Screen:getWidth(), h = Screen:getHeight() }
     self.all_books = self.books or {}
     self.shown = Layout.filter(self.all_books, self.keyword)
-    -- v0.3.7: full screen + Real微读's own bottom bar (no SimpleUI).
-    local top, avail = 0, Screen:getHeight()
+    -- 0.3.8: 0.3.3 look — status line on top, Real微读's own bottom bar.
+    local top, avail = U.content_area()
     self.content_top = top
     self.own_nav = true
     self.nav_h = self.own_nav and U.nav_height() or 0
@@ -214,13 +214,13 @@ end
 
 function ShelfGrid:_buildBody()
     self.grid_top = self.content_top + self.L.header_h
-    -- content_top is 0 (full screen); kept to translate tap coordinates.
     local body = VerticalGroup:new{ align = "left",
+        U.status_bar(Screen:getWidth()),
         self:_buildHeader(),
         self:_buildGrid(),
     }
     if self.own_nav then
-        body[#body + 1] = U.bottom_nav("shelf", Screen:getWidth())
+        body[#body + 1] = U.bottom_nav("shelf", Screen:getWidth(), self.page > 1, self.page < self.page_num)
         self.nav_top = self.content_top + self.avail_h
     end
     return body
@@ -230,7 +230,7 @@ end
 function ShelfGrid:_build()
     self.frame = FrameContainer:new{
         bordersize = 0, padding = 0, margin = 0, background = WHITE,
-        width = Screen:getWidth(), height = self.avail_h + self.nav_h,
+        width = Screen:getWidth(), height = self.content_top + self.avail_h + self.nav_h,
         self:_buildBody(),
     }
     self[1] = self.frame
@@ -244,7 +244,7 @@ function ShelfGrid:_refresh()
     UIManager:setDirty(self, "ui")
 end
 
-function ShelfGrid:_syncBar() end -- 0.3.7: own bar has no page arrows
+function ShelfGrid:_syncBar() end -- arrows are redrawn with the page (see _buildBody)
 
 -- Paging API (keys + swipes) ---------------------------------
 
@@ -280,14 +280,12 @@ function ShelfGrid:onTap(_, ges)
     local pos = ges and ges.pos
     if not pos then return end
     if self.own_nav and pos.y >= self.nav_top then
-        local third = Screen:getWidth() / 3
-        if pos.x < third then
-            if self.on_discover then self.on_discover() end
-        elseif pos.x < third * 2 then
-            if self.on_shelf then self.on_shelf() end
-        else
-            if self.on_me then self.on_me() end
-        end
+        local slot = U.NAV_SLOTS[U.nav_slot(pos.x, Screen:getWidth())]
+        if slot == "prev" then self:onPrevPage()
+        elseif slot == "next" then self:onNextPage()
+        elseif slot == "discover" then if self.on_discover then self.on_discover() end
+        elseif slot == "shelf" then if self.on_shelf then self.on_shelf() end
+        elseif slot == "me" then if self.on_me then self.on_me() end end
         return true
     end
     if inside(self.hit_search, pos.x, pos.y) then

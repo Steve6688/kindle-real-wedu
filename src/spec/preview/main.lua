@@ -40,6 +40,35 @@ end
 function H:init()
     if _G.__wsprev_done then return end
     if self.ui.document then
+        if MODE == "pageturn" then
+            _G.__wsprev_done = true
+            UIManager:scheduleIn(4, function()
+                -- per-turn cost in the emulator: event handling (KOReader + all
+                -- plugin hooks) and the repaint, 40 forward turns
+                local time = require("ui/time")
+                local Event = require("ui/event")
+                local hs, ps = {}, {}
+                for i = 1, 40 do
+                    local t0 = time.now()
+                    self.ui:handleEvent(Event:new("GotoViewRel", 1))
+                    local t1 = time.now()
+                    UIManager:forceRePaint()
+                    local t2 = time.now()
+                    hs[i], ps[i] = time.to_us(t1 - t0) / 1000, time.to_us(t2 - t1) / 1000
+                end
+                local function stat(a) local s, m = 0, 0 for _, v in ipairs(a) do s = s + v; if v > m then m = v end end
+                    table.sort(a); return s / #a, a[math.floor(#a / 2)], m end
+                local ha, hm, hx = stat(hs)
+                local pa, pm, px = stat(ps)
+                local f = io.open((os.getenv("WSPREV_OUT") or "/tmp/korprev/pageturn") .. ".txt", "w")
+                f:write(string.format("plugin=%s turns=40 handler avg %.1f ms median %.1f max %.1f | repaint avg %.1f ms median %.1f max %.1f | full_refresh_count=%s anim_patched=%s\n",
+                    tostring(self.ui.wereadshelf ~= nil), ha, hm, hx, pa, pm, px, tostring(UIManager.FULL_REFRESH_COUNT),
+                    tostring(require("apps/reader/modules/readerview")._wrs_orig_anim ~= nil)))
+                f:close()
+                UIManager:quit()
+            end)
+            return
+        end
         if MODE ~= "reader" and MODE ~= "font" and MODE ~= "sheet" then return end
         _G.__wsprev_done = true
         UIManager:scheduleIn(4, function()
@@ -79,7 +108,7 @@ function H:init()
         end)
         return
     end
-    if MODE == "reader" or MODE == "font" or MODE == "sheet" then
+    if MODE == "reader" or MODE == "font" or MODE == "sheet" or MODE == "pageturn" then
         _G.__wsprev_reader = true
         UIManager:scheduleIn(1, function()
             require("apps/reader/readerui"):showReader("/tmp/korprev/sample.epub")

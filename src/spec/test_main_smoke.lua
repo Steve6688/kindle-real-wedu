@@ -49,6 +49,7 @@ package.loaded["infra/sui_config"] = { invalidateTabsCache = function() invalida
     saveTabConfig = function(t) _G.tabs_writes = (_G.tabs_writes or 0) + 1; store.simpleui_bar_tabs = t end,
     saveNavbarMode = function(m) _G.mode_writes = (_G.mode_writes or 0) + 1; store.simpleui_bar_mode = m end }
 local bi = {}
+package.loaded["ui/elements/filemanager_menu_order"] = { main = { "history", "exit_menu" } }
 package.loaded["infra/sui_core"] = { BarInjection = { register = function(d) bi[d.id] = d end } }
 
 local P = dofile(here .. "/../wereadshelf.koplugin/main.lua")
@@ -66,9 +67,25 @@ check("BarInjection registered for grid", bi.wereadshelf_grid and bi.wereadshelf
 check("shelf icon outline when grid closed", reg.wereadshelf_open.get_icon("wereadshelf_open") == "/x/icons/tab_shelf.svg")
 check("main menu has four focused actions", menu_items.wereadshelf ~= nil
     and #menu_items.wereadshelf.sub_item_table == 4
+    and menu_items.wereadshelf.sub_item_table[4].text == "更多设置…"
     and menu_items.wereadshelf.sub_item_table[1].text == "打开 Real微读"
     and menu_items.wereadshelf.sub_item_table[2].text == "登录、同步与管理书架")
-check("startup open is opt-in (nothing shown)", #shown == 0)
+check("v0.3.5 default ON: fresh install startup opens Real微读 (no weread yet -> its notice)",
+    #shown == 1 and tostring(shown[1].text):find("weread.koplugin") ~= nil)
+check("v0.3.5 first run sets SimpleUI bar once, with backup", S:readSetting("setup_done") == true
+    and store.simpleui_bar_tabs[2] == "wereadshelf_open" and S:readSetting("preset_backup").simpleui_bar_mode == "both")
+check("v0.3.5 reader menu default ON", P.isOn("reader_menu"))
+check("v0.3.5 SimpleUI landing handed to us (close target + onboarding)", store.simpleui_hs_book_close_target == "library"
+    and store.simpleui_onboarding_done == true and S:readSetting("landing_backup")._saved)
+UIManager_stack = package.loaded["ui/uimanager"]
+UIManager_stack._window_stack = { { widget = { name = "sui_homescreen" } } }
+local before_top = #shown
+check("v0.3.5 shelf re-raised over SimpleUI Home Screen", P.ensureOnTop() and #shown == before_top + 1)
+UIManager_stack._window_stack = nil
+P.restoreLandingDefaults()
+check("v0.3.5 landing restore", store.simpleui_hs_book_close_target == nil and store.simpleui_onboarding_done == nil)
+P.restorePreset() -- back to the user's original bar for the tests below
+check("v0.3.5 ☰ entry pinned first", package.loaded["ui/elements/filemanager_menu_order"].main[1] == "wereadshelf_enter")
 -- no weread loaded -> friendly InfoMessage, no crash
 reg.wereadshelf_open.execute({})
 check("no weread -> InfoMessage shown", shown[#shown] and tostring(shown[#shown].text):find("weread.koplugin") ~= nil)
@@ -149,8 +166,15 @@ check("我 account name", mp.account_name == "小明")
 check("我 weekly stats fetched (weekly mode)", _G.stats_mode == "weekly" and S:readSetting("stats_cache").week_min == 61
     and S:readSetting("stats_cache").notes == 12)
 check("我 page refreshed after fetch", (mp.refreshed or 0) >= 1)
-check("我 rows: 6, 返回 KOReader (bold) + 退出到 Kindle", #mp.rows == 6 and mp.rows[5].text == "返回 KOReader" and mp.rows[5].bold
-    and mp.rows[6].text:find("退出到 Kindle") ~= nil)
+check("我 rows: 5, single exit row 返回 KOReader (bold)", #mp.rows == 5 and mp.rows[5].text == "返回 KOReader" and mp.rows[5].bold)
+mp.rows[4].fn()
+local sd = shown[#shown]
+check("阅读设置: 2 items (reader menu, 更多设置)", sd.title == "阅读设置" and #sd.buttons == 2
+    and sd.buttons[1][1].text:find("Real微读阅读菜单") and sd.buttons[2][1].text == "更多设置…")
+sd.buttons[2][1].callback()
+local md = shown[#shown]
+check("更多设置 holds 管理/恢复/退出", md.title == "更多设置" and #md.buttons == 4
+    and md.buttons[2][1].text:find("恢复 SimpleUI"))
 -- BUG-04: refresh returning nil / raising -> visible failure notice
 local old_client = fm.weread.client
 fm.weread.client = { get_read_stats = function() return nil end }
@@ -175,12 +199,11 @@ check("preset apply ok", P.applyPreset())
 check("preset tabs", store.simpleui_bar_tabs[1] == "wereadshelf_discover" and store.simpleui_bar_tabs[2] == "wereadshelf_open"
     and store.simpleui_bar_tabs[3] == "wereadshelf_me" and #store.simpleui_bar_tabs == 3)
 check("preset icons-only + navpager", store.simpleui_bar_mode == "icons" and store.simpleui_bar_navpager_enabled == true)
-check("preset enables open_on_start", S:isTrue("open_on_start"))
 P.applyPreset() -- second apply must not overwrite the original backup
 check("backup kept original", S:readSetting("preset_backup").simpleui_bar_mode == "both")
 check("restore ok", P.restorePreset())
 check("restored tabs/mode", store.simpleui_bar_tabs[1] == "home" and store.simpleui_bar_mode == "both"
-    and store.simpleui_bar_navpager_enabled == nil and not S:isTrue("open_on_start"))
+    and store.simpleui_bar_navpager_enabled == nil)
 check("restore twice -> error", not P.restorePreset())
 -- SimpleUI prunes our tab ids before we register; restore logic
 local T = P.tabsToRestore
@@ -206,18 +229,12 @@ local okb, why = P.backToNative()
 check("BUG-02 no backup -> false + reason", okb == false and tostring(why):find("没有可恢复的备份") ~= nil)
 check("BUG-02 no backup -> user switches untouched", S:isTrue("open_on_start") and S:isTrue("reader_menu"))
 P.confirmBackToNative()
-local bnd = shown[#shown]
-local nb = #broadcast
-bnd.buttons[1][1].callback()
-check("BUG-02 restore+restart w/o backup -> notice, no restart", not _G.restart_asked
+shown[#shown].ok_callback()
+check("BUG-02 restore w/o backup -> notice, no restart", not _G.restart_asked
     and tostring(shown[#shown].text):find("没有可恢复的备份") ~= nil)
-P.confirmBackToNative(); shown[#shown].buttons[2][1].callback()
-check("BUG-02 restore+exit w/o backup -> notice, no exit", #broadcast == nb and tostring(shown[#shown].text):find("设置未改动") ~= nil)
--- with a backup the dialog path does restore + restart
-S:saveSetting("open_on_start", false); S:saveSetting("reader_menu", false)
-P.applyWeChatMode(); P.confirmBackToNative(); shown[#shown].buttons[1][1].callback()
-check("BUG-02 with backup -> restored + restart asked", _G.restart_asked and store.simpleui_bar_tabs[1] == "home"
-    and not S:isTrue("reader_menu"))
+S:saveSetting("reader_menu", false)
+P.applyWeChatMode(); P.confirmBackToNative(); shown[#shown].ok_callback()
+check("BUG-02 with backup -> restored + restart asked", _G.restart_asked and store.simpleui_bar_tabs[1] == "home")
 -- BUG-03: apply and restore both use SimpleUI setters; no aliasing of our constant
 _G.tabs_writes, _G.mode_writes = 0, 0
 P.applyPreset()
@@ -250,10 +267,9 @@ S:saveSetting("reader_menu", false); zones = nil
 P:new{ ui = rui, path = "/x" }:init()
 check("reader: no hook when setting off", zones == nil)
 -- v0.3.4 enter / exit
-check("top-level menu entry 进入微信书架", menu_items.wereadshelf_enter and menu_items.wereadshelf_enter.sorting_hint == "main")
-S:saveSetting("open_on_start", true)
+check("top-level menu entry 进入 Real微读", menu_items.wereadshelf_enter and menu_items.wereadshelf_enter.text == "进入 Real微读")
 P.leaveToKOReader()
-check("返回 KOReader pauses auto-enter, keeps setting", not P.shouldAutoEnter() and S:isTrue("open_on_start"))
+check("返回 KOReader pauses auto-enter for this session", not P.shouldAutoEnter())
 ticks = {}; P:new{ ui = { menu = { registerToMainMenu = function() end } }, path = "/x" }:init()
 local nshown = #shown; for _, f in ipairs(ticks) do f() end
 check("paused: FM re-init does not open shelf", #shown == nshown)
@@ -261,12 +277,11 @@ local before = #shown; menu_items.wereadshelf_enter.callback()
 check("menu entry re-enters shelf + clears pause", #shown == before + 1 and P.shouldAutoEnter())
 ticks = {}; P:new{ ui = { menu = { registerToMainMenu = function() end } }, path = "/x" }:init()
 nshown = #shown; for _, f in ipairs(ticks) do f() end
-check("mode on: FM init (start / book closed) opens shelf", #shown > nshown and shown[#shown].active_action_id == "wereadshelf_open")
+check("always on: FM init (start / book closed) opens shelf", #shown > nshown and shown[#shown].active_action_id == "wereadshelf_open")
 local homed = false
 local rui2 = { document = {}, onHome = function() homed = true end }
 local ri2 = P:new{ ui = rui2, path = "/x" }
 check("dispatcher event from reader closes book", ri2:onWeReadShelfOpen() and homed)
-S:saveSetting("open_on_start", false)
 -- BUG-06: empty (but readable) shelf -> empty grid, not the 未同步 dialog
 local orig_gs = fm.weread.library_db.getShelf
 fm.weread.library_db.getShelf = function() return {} end

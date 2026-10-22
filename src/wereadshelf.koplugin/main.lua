@@ -70,6 +70,23 @@ local function settings()
 end
 WeReadShelf._settings_override = nil -- tests
 local function S() return WeReadShelf._settings_override or settings() end
+-- v0.3.5: reader menu defaults to ON; only an explicit false turns it off.
+local function on(key) return S():readSetting(key) ~= false end
+WeReadShelf.isOn = on
+WeReadShelf.ENTER_TEXT = "进入 Real微读"
+
+-- Put 「进入 Real微读」 at the top of KOReader's ☰ (main) menu tab instead of
+-- after Exit (items missing from the order table are appended at the end).
+local function pin_menu_entry()
+    for _, mod in ipairs({ "ui/elements/filemanager_menu_order", "ui/elements/reader_menu_order" }) do
+        local ok, order = pcall(require, mod)
+        if ok and type(order) == "table" and type(order.main) == "table" then
+            local has = false
+            for _, k in ipairs(order.main) do if k == "wereadshelf_enter" then has = true end end
+            if not has then table.insert(order.main, 1, "wereadshelf_enter") end
+        end
+    end
+end
 
 -- Solid icon variant = selected state; see icon_for below.
 local current_grid, current_page, active_tab
@@ -77,6 +94,7 @@ local close_pages, ui_icons -- defined in the Pages section below
 
 function WeReadShelf:init()
     plugin_dir = self.path or plugin_dir
+    pin_menu_entry()
     if self.ui and self.ui.menu then
         self.ui.menu:registerToMainMenu(self)
     end
@@ -85,11 +103,10 @@ function WeReadShelf:init()
     -- SimpleUI may be loaded after us (plugin load order); retry once later.
     UIManager:nextTick(function() self:registerSimpleUI() end)
     -- Reading menu (opt-in setting "reader_menu"; on with 微信读书模式).
-    if self.ui and self.ui.document and S():isTrue("reader_menu") then
+    if self.ui and self.ui.document and on("reader_menu") then
         self:hookReader()
     end
-    -- v0.3.4 微信读书模式 = remembered setting "open_on_start". While it is on,
-    -- every time the file manager comes up (KOReader start *and* after a book
+    -- v0.3.5: Real微读 is always on (no toggle, no setup step). Every time the file manager comes up (KOReader start *and* after a book
     -- is closed — ReaderUI:onClose/onHome rebuild the FileManager, which
     -- re-inits plugins) we put the shelf on top, so the user never lands on
     -- the SimpleUI / file browser screen. 「返回 KOReader」 pauses this for the
@@ -97,24 +114,97 @@ function WeReadShelf:init()
     local in_fm = self.ui and not self.ui.document
     if in_fm then
         Data._startup_done = true
+        pcall(WeReadShelf.firstRunSetup)
         if WeReadShelf.shouldAutoEnter() then
             UIManager:nextTick(function() WeReadShelf.showGrid() end)
+            if UIManager.scheduleIn then
+                UIManager:scheduleIn(1.5, function() WeReadShelf.ensureOnTop() end)
+            end
         end
     end
     self:onDispatcherRegisterActions()
 end
 
 function WeReadShelf.shouldAutoEnter()
-    return S():isTrue("open_on_start") and not Data._paused
+    return not Data._paused -- 返回 KOReader pauses only until next start / re-entry
 end
 
--- Gesture / dispatcher action: 「打开微信书架」 (assignable in KOReader
+-- First start with SimpleUI installed: set its bar to 发现/书架/我 once
+-- (backed up; 更多设置 → 恢复 SimpleUI 原设置 undoes it). Without SimpleUI,
+-- Real微读 draws its own bottom bar (wereadshelf_ui.bottom_nav).
+local sui_modules
+function WeReadShelf.firstRunSetup()
+    local s = S()
+    if s:readSetting("setup_done") then return false end
+    if not sui_modules() then return false end
+    local ok = WeReadShelf.applyPreset()
+    if ok then
+        WeReadShelf.applyLandingDefaults()
+        s:saveSetting("setup_done", true); s:flush()
+    end
+    return ok
+end
+
+-- SimpleUI's own first run would put its Home Screen (plus a "Choose your
+-- initial layout" onboarding card) in front of Real微读, on start and after
+-- closing a book. We hand both landings to the file browser, where Real微读
+-- opens on top. Values are backed up and put back by 恢复 SimpleUI 原设置.
+local LANDING = { simpleui_hs_book_close_target = "library", simpleui_onboarding_done = true }
+function WeReadShelf.applyLandingDefaults()
+    local Store = sui_modules()
+    if not Store then return false end
+    local s = S()
+    local b = s:readSetting("landing_backup")
+    if type(b) ~= "table" then
+        b = { _saved = true }
+        for k in pairs(LANDING) do b[k] = Store:get(k) end
+        local G = rawget(_G, "G_reader_settings")
+        if G then b.start_with = G:readSetting("start_with") end
+        s:saveSetting("landing_backup", b)
+    end
+    for k, v in pairs(LANDING) do Store:set(k, v) end
+    local G = rawget(_G, "G_reader_settings")
+    if G and G:readSetting("start_with") == "homescreen_simpleui" then G:saveSetting("start_with", "filemanager") end
+    return true
+end
+
+function WeReadShelf.restoreLandingDefaults()
+    local Store = sui_modules()
+    local s = S()
+    local b = s:readSetting("landing_backup")
+    if not Store or type(b) ~= "table" then return false end
+    for k in pairs(LANDING) do
+        if b[k] == nil then Store:del(k) else Store:set(k, b[k]) end
+    end
+    local G = rawget(_G, "G_reader_settings")
+    if G and b.start_with then G:saveSetting("start_with", b.start_with) end
+    s:delSetting("landing_backup")
+    return true
+end
+
+-- Something (e.g. SimpleUI's Home Screen) may still be shown after our first
+-- tick; check again shortly and bring the shelf back to the front.
+local function is_ours(w)
+    return w and (w.name == "wereadshelf_grid" or w.name == "wereadshelf_discover" or w.name == "wereadshelf_me")
+end
+function WeReadShelf.ensureOnTop()
+    if Data._paused then return false end
+    local st = UIManager._window_stack
+    local top = type(st) == "table" and st[#st] and st[#st].widget
+    if type(top) ~= "table" or is_ours(top) then return false end
+    if top.name == "filemanager" or top.name == "sui_homescreen" or (top.name or ""):find("^sui_") then
+        WeReadShelf.showGrid(); return true
+    end
+    return false
+end
+
+-- Gesture / dispatcher action: 「打开 Real微读」 (assignable in KOReader
 -- 设置 → 手势管理, also usable from profiles / QuickMenu).
 function WeReadShelf:onDispatcherRegisterActions()
     local ok, Dispatcher = pcall(require, "dispatcher")
     if not ok or type(Dispatcher) ~= "table" or type(Dispatcher.registerAction) ~= "function" then return end
     pcall(Dispatcher.registerAction, Dispatcher, "wereadshelf_open", {
-        category = "none", event = "WeReadShelfOpen", title = "打开微信书架", general = true,
+        category = "none", event = "WeReadShelfOpen", title = "打开 Real微读", general = true,
     })
 end
 
@@ -144,7 +234,7 @@ end
 function WeReadShelf.leaveToKOReader()
     Data._paused = true
     close_pages()
-    info("已返回 KOReader。\n再次进入：KOReader 菜单首页「进入微信书架」，或底栏任一 Tab，或手势「打开微信书架」。")
+    info("已返回 KOReader。\n再次进入：KOReader 菜单 ☰ 第一项「进入 Real微读」，或手势「打开 Real微读」；下次启动自动进入。")
 end
 
 -- Solid icon variant = selected state (UI-SPEC: 选中态换实心图标). SimpleUI's
@@ -223,7 +313,7 @@ end
 
 -- Preset (explicit, reversible) ----------------------------------------------
 
-local function sui_modules()
+sui_modules = function()
     local Store = package.loaded["infra/sui_store"]
     local Config = package.loaded["infra/sui_config"]
     if type(Store) ~= "table" or type(Config) ~= "table" then return nil end
@@ -284,7 +374,7 @@ function WeReadShelf:addToMainMenu(menu_items)
     -- v0.3.4: one obvious top-level entry (first page of the KOReader menu).
     local ui = self.ui
     menu_items.wereadshelf_enter = {
-        text = "进入微信书架",
+        text = WeReadShelf.ENTER_TEXT,
         sorting_hint = "main",
         callback = function() WeReadShelf.enter(ui) end,
     }
@@ -300,14 +390,10 @@ function WeReadShelf:addToMainMenu(menu_items)
             },
             {
                 text = "阅读时使用 Real微读菜单",
-                checked_func = function() return S():isTrue("reader_menu") end,
+                checked_func = function() return on("reader_menu") end,
                 callback = function() WeReadShelf.toggleSetting("reader_menu") end,
             },
-            {
-                text = "微信读书模式（启动/合上书时自动进书架）",
-                checked_func = function() return S():isTrue("open_on_start") end,
-                callback = function() WeReadShelf.toggleSetting("open_on_start") end,
-            },
+            { text = "更多设置…", callback = function() WeReadShelf.showMoreSettings() end },
         },
     }
 end
@@ -327,7 +413,7 @@ function WeReadShelf.openWereadManagement()
 end
 
 function WeReadShelf.toggleSetting(key)
-    S():saveSetting(key, not S():isTrue(key)); S():flush()
+    S():saveSetting(key, not on(key)); S():flush()
     if key == "reader_menu" then info("已保存，下次打开书时生效。") end
 end
 
@@ -360,6 +446,7 @@ function WeReadShelf.backToNative()
     local reader_menu = b.reader_menu == true
     local ok, e = WeReadShelf.restorePreset()
     if not ok then return false, e end
+    pcall(WeReadShelf.restoreLandingDefaults)
     s:saveSetting("reader_menu", reader_menu)
     s:flush()
     close_pages()
@@ -387,24 +474,14 @@ function WeReadShelf.confirmWeChatMode()
 end
 
 function WeReadShelf.confirmBackToNative()
-    local ButtonDialog = require("ui/widget/buttondialog")
-    local dlg
-    dlg = ButtonDialog:new{
-        title = "一键回原生\n恢复本插件改过的 SimpleUI 底栏设置，关闭微信读书风格菜单和启动进书架。"
-            .. "\n（书里调过的字号等属于该书自己的阅读设置，保留。）",
-        buttons = {
-            { { text = "恢复原状并重启 KOReader", callback = function()
-                UIManager:close(dlg)
-                back_to_native_then(function() UIManager:askForRestart("已恢复原状。") end) end } },
-            { { text = "恢复原状并退出到 Kindle", callback = function()
-                UIManager:close(dlg)
-                back_to_native_then(WeReadShelf.exitToKindle) end } },
-            { { text = "只退出到 Kindle（不改设置）", callback = function()
-                UIManager:close(dlg); WeReadShelf.exitToKindle() end } },
-            { { text = "取消", callback = function() UIManager:close(dlg) end } },
-        },
-    }
-    UIManager:show(dlg)
+    local ConfirmBox = require("ui/widget/confirmbox")
+    UIManager:show(ConfirmBox:new{
+        text = "恢复 SimpleUI 底栏原来的设置（安装 Real微读之前的样子）？\n书里的字号等阅读设置保留。",
+        ok_text = "恢复并重启",
+        ok_callback = function()
+            back_to_native_then(function() UIManager:askForRestart("已恢复。") end)
+        end,
+    })
 end
 
 -- Same as KOReader's own 退出 (frontend/ui/elements/common_exit_menu_table.lua:8-19);
@@ -426,19 +503,29 @@ end
 function WeReadShelf.showSettingsDialog()
     local ButtonDialog = require("ui/widget/buttondialog")
     local dlg
-    local function mark(k) return S():isTrue(k) and "✓ " or "　" end
     local function btn(text, fn) return { { text = text, callback = function() UIManager:close(dlg); fn() end } } end
     dlg = ButtonDialog:new{
-        title = "Real微读设置",
+        title = "阅读设置",
         buttons = {
-            btn(mark("reader_menu") .. "微信读书风格阅读菜单", function() WeReadShelf.toggleSetting("reader_menu") end),
-            btn(mark("open_on_start") .. "微信读书模式（自动进书架）", function() WeReadShelf.toggleSetting("open_on_start") end),
-            btn("微信读书插件设置（weread）", function()
-                -- weread's own settings live in its main menu (weread/ui/menu.lua:155)
-                info("请从 KOReader 菜单 → 微信读书 → 设置 进入。") end),
-            btn("返回 KOReader（文件浏览器）", function() WeReadShelf.leaveToKOReader() end),
-            btn("一键开启微信读书模式…", function() WeReadShelf.confirmWeChatMode() end),
-            btn("一键回原生…", function() WeReadShelf.confirmBackToNative() end),
+            btn((on("reader_menu") and "✓ " or "　") .. "Real微读阅读菜单", function() WeReadShelf.toggleSetting("reader_menu") end),
+            btn("更多设置…", function() WeReadShelf.showMoreSettings() end),
+        },
+    }
+    UIManager:show(dlg)
+end
+
+-- Rarely needed things, kept off the main surface.
+function WeReadShelf.showMoreSettings()
+    local ButtonDialog = require("ui/widget/buttondialog")
+    local dlg
+    local function btn(text, fn) return { { text = text, callback = function() UIManager:close(dlg); fn() end } } end
+    dlg = ButtonDialog:new{
+        title = "更多设置",
+        buttons = {
+            btn("登录、同步与管理书架（微信读书）", function() WeReadShelf.openWereadManagement() end),
+            btn("恢复 SimpleUI 原设置…", function() WeReadShelf.confirmBackToNative() end),
+            btn("退出到 Kindle…", function() WeReadShelf.confirmExitToKindle() end),
+            btn("关闭", function() end),
         },
     }
     UIManager:show(dlg)
@@ -646,7 +733,6 @@ function WeReadShelf.showMe()
             { text = "书架同步", fn = function() call_weread("openBookshelf") end },        -- main.lua:33
             { text = "阅读设置", fn = function() WeReadShelf.showSettingsDialog() end },
             { text = "返回 KOReader", bold = true, fn = function() WeReadShelf.leaveToKOReader() end },
-            { text = "退出到 Kindle / 恢复原生…", fn = function() WeReadShelf.confirmBackToNative() end },
         },
         on_nav_discover = function() WeReadShelf.showDiscover() end,
         on_nav_shelf = function() WeReadShelf.showGrid() end,
@@ -777,7 +863,7 @@ function WeReadShelf.showShelfStatic()
         }
     end
     menu = Menu:new{
-        title = string.format("微信书架（%d）", #books),
+        title = string.format("Real微读（%d）", #books),
         item_table = items,
         is_borderless = true,
         title_bar_fm_style = true,

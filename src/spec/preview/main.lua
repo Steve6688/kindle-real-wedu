@@ -79,6 +79,9 @@ function H:init()
     end
     _G.__wsprev_done = true
     self.ui.weread = fake_weread()
+    if MODE == "startup" then -- no action: Real微读 must open by itself
+        UIManager:scheduleIn(5, shot); return
+    end
     UIManager:scheduleIn(3, function()
         local P = self.ui.wereadshelf
         for i = #UIManager._window_stack, 1, -1 do -- drop first-run popups (box only)

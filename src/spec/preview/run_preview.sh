@@ -37,8 +37,9 @@ rm -rf $P/simpleui.koplugin $P/wereadshelf.koplugin $P/zzwsprev.koplugin
 cp -r "$KW/vendor/simpleui.koplugin" "$ROOT/wereadshelf.koplugin" $P/
 mkdir -p $P/zzwsprev.koplugin && cp "$HERE/main.lua" "$HERE/_meta.lua" $P/zzwsprev.koplugin/
 S=$K/lib/koreader/settings/simpleui; mkdir -p $S
-printf 'return {\n ["reader_menu"] = true,\n}\n' > $K/lib/koreader/settings/wereadshelf.lua
-[ -f $S/sui_settings.lua ] || printf 'return {\n ["simpleui_bar_tabs"] = { "wereadshelf_discover", "wereadshelf_open", "wereadshelf_me" },\n ["simpleui_bar_mode"] = "icons",\n ["simpleui_bar_navpager_enabled"] = true,\n}\n' > $S/sui_settings.lua
+rm -f $K/lib/koreader/settings/wereadshelf.lua # fresh install: no plugin settings at all
+[ -n "$WSPREV_FRESH" ] && rm -f $S/sui_settings.lua && FRESH=1
+[ -n "$FRESH" ] || [ -f $S/sui_settings.lua ] || printf 'return {\n ["simpleui_bar_tabs"] = { "wereadshelf_discover", "wereadshelf_open", "wereadshelf_me" },\n ["simpleui_bar_mode"] = "icons",\n ["simpleui_bar_navpager_enabled"] = true,\n}\n' > $S/sui_settings.lua
 OUT="${WSPREV_DIR:-$KW/preview}"; mkdir -p "$OUT"; cd $K/lib/koreader
 for mode in ${WSPREV_MODES:-shelf shelf2 discover me reader font}; do
   SDL_VIDEODRIVER=dummy EMULATE_READER_W=1236 EMULATE_READER_H=1648 EMULATE_READER_DPI=300 \

@@ -1,6 +1,6 @@
 # src/
 
-- `wereadshelf.koplugin/` — KOReader 插件 v0.3.4（拷到 Kindle，见 INSTALL.md）
+- `wereadshelf.koplugin/` — KOReader 插件 v0.3.5（拷到 Kindle，见 INSTALL.md）
   - `wereadshelf_data.lua` 数据层（v0.1 起未改）：`get_shelf(weread, opts)`、`open_book(weread, bookId)`、`plan_open`、`find_weread`
   - `wereadshelf_layout.lua` **新**：网格布局/分页/点击命中/本地筛选的纯计算（UI-SPEC v1 数值，按屏宽 /1236 缩放）
   - `wereadshelf_grid.lua` **新**：4 列封面网格书架页（只用 KOReader 自带 widget）

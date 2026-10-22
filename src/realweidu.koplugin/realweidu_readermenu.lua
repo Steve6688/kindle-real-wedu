@@ -232,6 +232,7 @@ function RM:_bottomBar(g)
     local right = U.text("›", U.px(48), true)
     place(g, CenterContainer:new{ dimen = Geom:new{ w = chev, h = m.slider_h }, left }, m.margin, y)
     place(g, CenterContainer:new{ dimen = Geom:new{ w = chev, h = m.slider_h }, right }, W - m.margin - chev, y)
+    self.slider_rect = rect(m.margin, y, W - 2 * m.margin, m.slider_h) -- 0.4.6: incl. ‹ ›
     self:_hit(rect(m.margin, y, chev, m.slider_h), function() self:prevChapter() end)
     self:_hit(rect(W - m.margin - chev, y, chev, m.slider_h), function() self:nextChapter() end)
     place(g, FrameContainer:new{ bordersize = 0, background = Blitbuffer.Color8(0xCC),
@@ -275,7 +276,8 @@ function RM:_bottomBar(g)
         { draw = "sun",     fn = function() self:showBrightnessPanel() end },
         { draw = "A",       fn = function() self:toggleFont() end },
     }
-    if self.progress_open then self:_progressCard(g, y) end
+    -- 0.4.6: card sits above the whole panel (and the AI float), never over the slider / ‹ ›
+    if self.progress_open then self:_progressCard(g, H - (m.stats_h + m.slider_h + m.pills_h + m.icon_h + U.px(20)) - m.float_d - U.px(20)) end
     for i, b in ipairs(icons) do
         local x, sw = Logic.slot(W, #icons, i)
         self:_drawIcon(g, b.draw, x, y, sw, m.icon_h)
@@ -746,6 +748,7 @@ function RM:_progressCard(g, bar_y)
     local cw = W - 2 * m.margin
     local cy = bar_y - ch - U.px(12)
     local cx = m.margin
+    self.progress_card_rect = rect(cx, cy, cw, ch)
     place(g, FrameContainer:new{ bordersize = 2, color = U.BLACK, background = U.WHITE,
         radius = U.px(20), padding = 0, margin = 0, width = cw, height = ch, U.hspan(0) }, cx, cy)
     local cols = {

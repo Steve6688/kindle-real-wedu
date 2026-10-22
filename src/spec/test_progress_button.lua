@@ -51,4 +51,17 @@ check("reads KOReader statistics", src:find("ui.statistics") ~= nil and src:find
 check("A button untouched", src:find('local name = self.font_open and "rm_font_active" or "rm_font"', 1, true) ~= nil)
 local blk = (src:match("%-%- 0%.4%.5 middle button(.-)function RM:showProgress") or ""):gsub("%-%-[^\n]*", "")
 check("card adds no animation/TTS code", #blk > 0 and not blk:find("[Aa]nimat") and not blk:find("TTS") and not blk:find("ReadAloud"))
+-- 0.4.6: card above slider / arrows; no 听 button
+check("card anchored above whole panel + float", src:find("self:_progressCard(g, H - (m.stats_h + m.slider_h + m.pills_h + m.icon_h + U.px(20)) - m.float_d - U.px(20))", 1, true) ~= nil)
+check("slider rect covers ‹ › (margin to margin)", src:find("self.slider_rect = rect(m.margin, y, W - 2 * m.margin, m.slider_h)", 1, true) ~= nil)
+do -- geometry at PW5 (px == identity scale assumption irrelevant: same unit on both sides)
+    local H, stats_h, slider_h, pills_h, icon_h, pad, float_d, gap20, ch, gap12 = 1648, 150, 110, 110, 140, 20, 96, 20, 150, 12
+    local panel_y = H - (stats_h + slider_h + pills_h + icon_h + pad)
+    local card_bottom = (panel_y - float_d - gap20 - ch - gap12) + ch
+    local slider_top = panel_y + 16 + stats_h
+    check("card bottom above slider top", card_bottom <= slider_top)
+    check("card bottom above AI float top", card_bottom <= panel_y - float_d - gap20)
+end
+check("听 float button unchanged", src:find('float("听", x_tts, self:_hasTTS(), function() self:openTTS() end)', 1, true) ~= nil)
+check("AI float unchanged", src:find("local x_ai = W - m.margin - 2 * d - gap", 1, true) ~= nil)
 print(string.format("\n%d checks, %d failed", n, fails)); os.exit(fails == 0 and 0 or 1)

@@ -155,7 +155,7 @@ local function S() return RealWeidu._settings_override or settings() end
 local function on(key) return S():readSetting(key) ~= false end
 RealWeidu.isOn = on
 RealWeidu.ENTER_TEXT = "进入 Real微读"
-RealWeidu.VERSION = "0.4.5"
+RealWeidu.VERSION = "0.4.6"
 
 -- Put 「进入 Real微读」 at the top of KOReader's ☰ (main) menu tab instead of
 -- after Exit (items missing from the order table are appended at the end).

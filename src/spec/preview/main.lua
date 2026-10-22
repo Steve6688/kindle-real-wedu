@@ -85,6 +85,11 @@ function H:init()
             end
             if MODE == "sheet" and top.toggleFont then top:toggleFont() end
             if MODE == "progress" and top.toggleProgressCard then top:toggleProgressCard() end -- 0.4.5
+            if MODE == "progress" and top.progress_card_rect and top.slider_rect then -- 0.4.6 overlap check
+                local c, sl = top.progress_card_rect, top.slider_rect
+                logger.info("WSPREV card", c.x, c.y, c.w, c.h, "slider", sl.x, sl.y, sl.w, sl.h,
+                    (c.y + c.h <= sl.y) and "CARD_ABOVE_SLIDER_OK" or "CARD_OVERLAPS_SLIDER")
+            end
             if MODE == "font" and top.refresh then top.font_open = true; top:refresh("ui") end
             if os.getenv("WSPREV_SET") and top.setStep then
                 local Logic = require("realweidu_logic")

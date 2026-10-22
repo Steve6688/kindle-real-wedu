@@ -64,7 +64,10 @@ check("tabs cache invalidated", invalidated)
 check("BarInjection registered for grid", bi.wereadshelf_grid and bi.wereadshelf_grid.widget_name == "wereadshelf_grid"
     and bi.wereadshelf_grid.active_action_id == "wereadshelf_open" and bi.wereadshelf_grid.is_pageable == true)
 check("shelf icon outline when grid closed", reg.wereadshelf_open.get_icon("wereadshelf_open") == "/x/icons/tab_shelf.svg")
-check("main menu entry with submenu", menu_items.wereadshelf ~= nil and #menu_items.wereadshelf.sub_item_table == 8)
+check("main menu has four focused actions", menu_items.wereadshelf ~= nil
+    and #menu_items.wereadshelf.sub_item_table == 4
+    and menu_items.wereadshelf.sub_item_table[1].text == "打开 Real微读"
+    and menu_items.wereadshelf.sub_item_table[2].text == "登录、同步与管理书架")
 check("startup open is opt-in (nothing shown)", #shown == 0)
 -- no weread loaded -> friendly InfoMessage, no crash
 reg.wereadshelf_open.execute({})
@@ -93,6 +96,7 @@ fm.weread = {
     showSearch = function() calls.search = true end,
     searchWithUI = function(_, kw) calls.search_kw = kw end,
     showReadStats = function() calls.stats = true end }
+check("direct weread management entry", P.openWereadManagement() and calls.shelf)
 reg.wereadshelf_open.execute({})
 local g = shown[#shown]
 check("grid shown with 2 books", g and g.books and #g.books == 2 and g.icons_dir == "/x/icons")

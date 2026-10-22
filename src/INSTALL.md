@@ -1,4 +1,4 @@
-# Real微读（wereadshelf.koplugin）安装说明 — v0.3.4（底栏 + 书架 + 发现 + 我 + 阅读菜单 + 字体面板 + 一键回原生）
+# Real微读（wereadshelf.koplugin）安装说明 — v0.3.5（简洁入口 + 书架 + 发现 + 我 + 阅读菜单）
 
 适用：KOReader v2026.07.1 + weread.koplugin 1.6.0 + simpleui.koplugin 2.7.5（Kindle PW5）。
 本插件**只读** weread 的本地缓存，不修改 weread / SimpleUI 的任何文件，不改 Kindle 系统，只在 `/mnt/us/koreader/` 下新增/更新一个插件文件夹和一个设置文件 `settings/wereadshelf.lua`（只有你在菜单里点「应用预设」或开关「启动时打开书架」时才写）。
@@ -17,7 +17,7 @@ koreader/plugins/wereadshelf.koplugin/
     icons/  (21 个 svg：tab_*、rm_*、bookmark*、more、back_chevron、chevron_right、refresh、search、import、select、wereadshelf)
 ```
 （`src/spec/` 是电脑上的测试和预览工具，**不要拷**。）
-3. 安全弹出 → KUAL 启动 KOReader → 插件管理确认「Real微读」已勾选，版本 0.3.4。
+3. 安全弹出 → KUAL 启动 KOReader → 插件管理确认「Real微读」已勾选，版本 0.3.5。
 4. 确保 weread 里打开过一次书架（联网），让它缓存书架和封面——本插件只显示这份缓存。
 
 从 v0.1 升级：Tab id `wereadshelf_open` 没变，原来放在底栏的「微信书架」格子会自动变成封面网格。

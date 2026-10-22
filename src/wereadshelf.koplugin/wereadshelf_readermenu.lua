@@ -326,7 +326,7 @@ function RM:showMore()
                 send(self.ui, "ShowBookInfo")
             end),
             item("刷新屏幕", function() self:close(); UIManager:setDirty(nil, "full") end),
-            item("KOReader 原生菜单", function() self:close(); send(self.ui, "ShowMenu") end),
+            item("KOReader 菜单与设置", function() self:close(); send(self.ui, "ShowMenu") end),
         },
     }
     UIManager:show(dlg)

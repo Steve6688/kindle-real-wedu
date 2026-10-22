@@ -8,7 +8,7 @@
 | KOReader | v2026.07.x（kindlepw2 包） | 设备上已装 |
 | weread.koplugin（微信读书登录/书架/下载/进度同步） | 1.6.0 | `vendor/weread.koplugin` |
 | SimpleUI（底栏/主页框架） | 2.7.5 | `vendor/simpleui.koplugin` |
-| **wereadshelf.koplugin（本项目，自研）** | **0.3.4** | `src/wereadshelf.koplugin` |
+| **wereadshelf.koplugin（本项目，自研）** | **0.3.5** | `src/wereadshelf.koplugin` |
 
 Real微读提供：「发现 / 书架 / 我」3 Tab 仅图标底栏、4 列封面网格书架、发现与我页、微信读书风格阅读菜单与字体面板、一键开启微信读书模式 / 一键回原生。只读 weread 缓存，不修改其它插件和 Kindle 系统。
 

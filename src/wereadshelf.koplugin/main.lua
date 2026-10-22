@@ -234,33 +234,43 @@ function WeReadShelf:addToMainMenu(menu_items)
         text = "Real微读",
         sorting_hint = "tools",
         sub_item_table = {
-            { text = "打开书架（封面网格）", callback = function() WeReadShelf.showGrid() end },
-            { text = "打开发现页", callback = function() WeReadShelf.showDiscover() end },
-            { text = "打开我的页", callback = function() WeReadShelf.showMe() end },
-            { text = "打开书架（文字列表）", callback = function() WeReadShelf.showShelfStatic() end, separator = true },
+            { text = "打开 Real微读", callback = function() WeReadShelf.showGrid() end },
             {
-                text = "微信读书风格阅读菜单（点屏幕中部呼出）",
+                text = "登录、同步与管理书架",
+                callback = function() WeReadShelf.openWereadManagement() end,
+                separator = true,
+            },
+            {
+                text = "阅读时使用 Real微读菜单",
                 checked_func = function() return S():isTrue("reader_menu") end,
                 callback = function() WeReadShelf.toggleSetting("reader_menu") end,
             },
             {
-                text = "启动 KOReader 时打开书架",
+                text = "启动后直接打开 Real微读",
                 checked_func = function() return S():isTrue("open_on_start") end,
                 callback = function() WeReadShelf.toggleSetting("open_on_start") end,
-                separator = true,
-            },
-            { text = "一键开启微信读书模式…", callback = function() WeReadShelf.confirmWeChatMode() end },
-            {
-                text = "一键回原生（恢复 KOReader / SimpleUI 原状）…",
-                callback = function() WeReadShelf.confirmBackToNative() end,
             },
         },
     }
 end
 
+-- Direct route for account, login, sync and shelf management. The weread
+-- plugin owns these flows; Real微读 simply opens them without another menu hop.
+function WeReadShelf.openWereadManagement()
+    local weread = Data.find_weread()
+    if weread and type(weread.openBookshelf) == "function" then
+        local ok, err = pcall(weread.openBookshelf, weread)
+        if ok then return true end
+        info("微信读书打开失败：" .. tostring(err))
+        return false
+    end
+    info("未找到 weread.koplugin，请先安装或启用微信读书插件。")
+    return false
+end
+
 function WeReadShelf.toggleSetting(key)
     S():saveSetting(key, not S():isTrue(key)); S():flush()
-    if key == "reader_menu" then info("阅读菜单设置将在下次打开书时生效。") end
+    if key == "reader_menu" then info("已保存，下次打开书时生效。") end
 end
 
 -- 微信读书模式 = SimpleUI preset (with backup) + reading menu + open on start.
@@ -351,15 +361,11 @@ function WeReadShelf.showSettingsDialog()
     local function mark(k) return S():isTrue(k) and "✓ " or "　" end
     local function btn(text, fn) return { { text = text, callback = function() UIManager:close(dlg); fn() end } } end
     dlg = ButtonDialog:new{
-        title = "阅读设置",
+        title = "Real微读设置",
         buttons = {
-            btn(mark("reader_menu") .. "微信读书风格阅读菜单", function() WeReadShelf.toggleSetting("reader_menu") end),
-            btn(mark("open_on_start") .. "启动时打开书架", function() WeReadShelf.toggleSetting("open_on_start") end),
-            btn("微信读书插件设置（weread）", function()
-                -- weread's own settings live in its main menu (weread/ui/menu.lua:155)
-                info("请从 KOReader 菜单 → 微信读书 → 设置 进入。") end),
-            btn("一键开启微信读书模式…", function() WeReadShelf.confirmWeChatMode() end),
-            btn("一键回原生…", function() WeReadShelf.confirmBackToNative() end),
+            btn(mark("reader_menu") .. "阅读时使用 Real微读菜单", function() WeReadShelf.toggleSetting("reader_menu") end),
+            btn(mark("open_on_start") .. "启动后直接打开 Real微读", function() WeReadShelf.toggleSetting("open_on_start") end),
+            btn("登录、同步与管理书架", function() WeReadShelf.openWereadManagement() end),
         },
     }
     UIManager:show(dlg)

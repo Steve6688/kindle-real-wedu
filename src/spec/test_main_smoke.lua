@@ -334,7 +334,8 @@ do
         and src:find("showTocSheet", 1, true) and src:find('kind == "dot"', 1, true)
         and src:find('float("AI"', 1, true) and src:find("syncThoughts", 1, true)
         and src:find('rm_font_active', 1, true) and src:find("_fontIconBar", 1, true)
-        and src:find('self:refresh("full")', 1, true))
+        and src:find('self:refresh("full")', 1, true)
+        and not src:find('float("听"', 1, true) and not src:find("openTTS", 1, true)) -- 0.4.4: no 听/TTS
     check("TOC is half-screen sheet dismissable outside", src:find("sheet_h = math.floor(H * 0.55)", 1, true)
         and src:find("tap outside dismisses TOC", 1, true))
     local ps = assert(io.open(here .. "/../realweidu.koplugin/rweread/ui/progress_sync_dialog.lua")):read("*a")

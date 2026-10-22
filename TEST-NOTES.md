@@ -1,4 +1,4 @@
-# wereadshelf.koplugin v0.3.3 测试说明（给测试工程师）
+# realweidu.koplugin v0.3.3 测试说明（给测试工程师）
 
 环境：Kindle PW5（1236×1648），KOReader v2026.07.1，weread.koplugin 1.6.0（已扫码登录，至少联网打开过一次书架），simpleui.koplugin 2.7.5。安装见 `src/INSTALL.md`。**测前备份 `koreader/settings/` 整个目录。**
 预览图（模拟器）：`preview/{shelf,shelf2,discover,me,reader,font}-1236x1648.png`，以及矮屏分页示例 `preview/me-paged-1236x1100.png`。
@@ -39,7 +39,7 @@
 ## 2. 功能清单与预期
 ### 2.1 微信读书模式 / 一键回原生
 1. 开启：弹确认框列出将改的项 → 开启 → 重启后底栏只有 3 个图标 Tab，进 KOReader 直接是书架。
-2. `settings/wereadshelf.lua` 中出现备份（SimpleUI 原 tabs / mode / navpager、原阅读菜单开关）。
+2. `settings/realweidu.lua` 中出现备份（SimpleUI 原 tabs / mode / navpager、原阅读菜单开关）。
 3. 一键回原生 →「恢复原状并重启」：重启后 SimpleUI 底栏与开启前完全一致，点屏幕中部恢复为 KOReader 原生菜单，启动不再进书架。
 4. 「恢复原状并退出到 Kindle」：同上恢复后退出 KOReader 回 Kindle 主页；「只退出」：不改任何设置直接退出；「取消」：无变化。
 5. 未开启过模式就点回原生（「恢复原状并重启」或「恢复原状并退出」）：提示“没有可恢复的备份：从未开启过微信读书模式，设置未改动。”，不重启、不退出，手动打开过的「启动时打开书架」「阅读菜单」保持不变。
@@ -94,4 +94,4 @@
 7. 内存：书架/发现页封面多时长时间使用不 OOM。
 
 ## 5. 出问题时
-提供 `koreader/crash.log`（搜 `wereadshelf`、`simpleui`）、操作步骤、屏幕照片。
+提供 `koreader/crash.log`（搜 `realweidu`、`simpleui`）、操作步骤、屏幕照片。

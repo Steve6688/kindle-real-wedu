@@ -1,5 +1,5 @@
--- wereadshelf_pages.lua — 「发现」and「我」full-screen tab pages.
--- Each page draws Real微读's own bottom bar (wereadshelf_ui.bottom_nav).
+-- realweidu_pages.lua — 「发现」and「我」full-screen tab pages.
+-- Each page draws Real微读's own bottom bar (realweidu_ui.bottom_nav).
 -- Content is only what
 -- weread 1.6.0 really provides; see main.lua for the data sources.
 local CenterContainer = require("ui/widget/container/centercontainer")
@@ -13,8 +13,8 @@ local OverlapGroup    = require("ui/widget/overlapgroup")
 local UIManager       = require("ui/uimanager")
 local Screen          = Device.screen
 
-local U     = require("wereadshelf_ui")
-local Logic = require("wereadshelf_logic")
+local U     = require("realweidu_ui")
+local Logic = require("realweidu_logic")
 
 local function place(g, w, x, y) w.overlap_offset = { x, y }; g[#g + 1] = w; return w end
 local function rect(x, y, w, h) return Geom:new{ x = x, y = y, w = w, h = h } end
@@ -127,7 +127,7 @@ end
 -- 发现
 -------------------------------------------------------------------------------
 local Discover = Page:extend{
-    name = "wereadshelf_discover",
+    name = "realweidu_discover",
     nav_active = "discover",
     books = nil,          -- Data.get_shelf() list (may be empty)
     on_search = nil, on_open = nil, on_all = nil,
@@ -179,7 +179,7 @@ end
 -- 我
 -------------------------------------------------------------------------------
 local Me = Page:extend{
-    name = "wereadshelf_me",
+    name = "realweidu_me",
     nav_active = "me",
     account_name = nil,
     stats = nil,          -- { week_min=, finished=, notes=, note_text= }

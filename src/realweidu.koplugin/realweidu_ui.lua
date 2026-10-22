@@ -1,4 +1,4 @@
--- wereadshelf_ui.lua — small shared drawing helpers built on stock KOReader
+-- realweidu_ui.lua — small shared drawing helpers built on stock KOReader
 -- widgets. Only black / white / #D9D9D9 (UI-SPEC v1 全局). No animation.
 local Blitbuffer      = require("ffi/blitbuffer")
 local CenterContainer = require("ui/widget/container/centercontainer")

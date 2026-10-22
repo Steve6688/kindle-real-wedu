@@ -1,4 +1,4 @@
--- wereadshelf_data.lua — data layer for the "微信书架" tab.
+-- realweidu_data.lua — data layer for the "微信书架" tab.
 --
 -- Pure Lua: no KOReader UI requires at module level, so it can be unit
 -- tested with luajit on a PC. Everything goes through the *live*

@@ -1,7 +1,7 @@
-# Real微读（wereadshelf.koplugin）安装说明 — v0.4.0
+# Real微读（realweidu.koplugin）安装说明 — v0.4.1
 
 适用：KOReader v2026.07.1（Kindle PW5）。**0.4.0 已内置 weread.koplugin 1.6.0（AGPL-3.0），只需装这一个插件。****不需要 SimpleUI。**
-内置的微信读书沿用原设置 `settings/weread.lua` 与数据目录 `weread/`：**登录、Cookie、缓存、已下载的书和设置全部保留，不用重新登录。** 本插件自己的设置在 `settings/wereadshelf.lua`。
+内置的微信读书沿用原设置 `settings/weread.lua` 与数据目录 `weread/`：**登录、Cookie、缓存、已下载的书和设置全部保留，不用重新登录。** 本插件自己的设置在 `settings/realweidu.lua`。
 
 ## 0. 先备份（必做）
 USB 连接 Kindle，把整个 `koreader/settings/` 复制到电脑，例如 `settings.bak-20261021/`。
@@ -9,13 +9,13 @@ USB 连接 Kindle，把整个 `koreader/settings/` 复制到电脑，例如 `set
 
 ## 1. 全新安装 / 从 v0.1、v0.2 升级
 1. 完全退出 KOReader（菜单 → 退出），USB 连电脑。
-2. **删除 `koreader/plugins/weread.koplugin/`**（已内置；若忘了删，Real微读会自动停用它，不会出现两个菜单），再删除旧的 `koreader/plugins/wereadshelf.koplugin/`（升级时），再把本仓库 `src/wereadshelf.koplugin/` **整个文件夹**拷过去：
+2. **删除 `koreader/plugins/weread.koplugin/`（已内置）和旧的 `koreader/plugins/wereadshelf.koplugin/`（0.4.1 起改名 realweidu.koplugin）**；忘了删也没关系，Real微读会自动停用它们，不会出现重复菜单。升级 realweidu 时先删旧的 `koreader/plugins/realweidu.koplugin/`，再把本仓库 `src/realweidu.koplugin/` **整个文件夹**拷过去：
 ```
-koreader/plugins/wereadshelf.koplugin/
-    _meta.lua  main.lua  wereadshelf_data.lua  wereadshelf_layout.lua  wereadshelf_grid.lua
-    wereadshelf_logic.lua  wereadshelf_ui.lua  wereadshelf_pages.lua  wereadshelf_readermenu.lua  wereadshelf_fastdl.lua
+koreader/plugins/realweidu.koplugin/
+    _meta.lua  main.lua  realweidu_data.lua  realweidu_layout.lua  realweidu_grid.lua
+    realweidu_logic.lua  realweidu_ui.lua  realweidu_pages.lua  realweidu_readermenu.lua  realweidu_fastdl.lua
     rweread/  (内置 weread.koplugin 1.6.0：lib/ ui/ integrations/ icons/ fonts/ LICENSE NOTICE)
-    icons/  (21 个 svg：tab_*、rm_*、bookmark*、more、back_chevron、chevron_right、refresh、search、import、select、wereadshelf)
+    icons/  (21 个 svg：tab_*、rm_*、bookmark*、more、back_chevron、chevron_right、refresh、search、import、select、realweidu)
 ```
 （`src/spec/` 是电脑上的测试和预览工具，**不要拷**。）
 3. **从 0.3.6 或更早升级：删除 `koreader/plugins/simpleui.koplugin/`**（0.3.7 起不再使用 SimpleUI；残留也不会出错，但会多一套无用菜单）。如需清理，可一并删除 `koreader/settings/simpleui/`。
@@ -36,9 +36,9 @@ koreader/plugins/wereadshelf.koplugin/
 - **字体面板**：底栏「A」→ 字体设置面板（与 0.3.3 相同）：字号、粗细、行距、边距 4 条滑杆（点 −/+ 或点滑杆位置），首行缩进开关，字体按钮（只显示设备上已装的中文字体）。改动按本书保存，与 KOReader 原生字体设置是同一份。PDF 等版式文档点「A」打开 KOReader 原生设置。
 
 ## 3. 回退
-- **回到旧版**：退出 KOReader，备份当前目录，删除 `plugins/wereadshelf.koplugin/`，再拷回旧版文件夹。
-- **完全卸载**：退出 KOReader，删除 `plugins/wereadshelf.koplugin/`；如不保留设置，再删除 `settings/wereadshelf.lua`。
+- **回到旧版**：退出 KOReader，备份当前目录，删除 `plugins/realweidu.koplugin/`，再拷回旧版文件夹。
+- **完全卸载**：退出 KOReader，删除 `plugins/realweidu.koplugin/`；如不保留设置，再删除 `settings/realweidu.lua`。
 - KOReader 无法启动/设置异常：用第 0 步备份的 `settings/` 整个覆盖回去。
 
 ## 5. 出问题时请提供
-`koreader/crash.log`（搜 `wereadshelf`），哪一步、屏幕上的提示文字，最好一张照片。
+`koreader/crash.log`（搜 `realweidu`），哪一步、屏幕上的提示文字，最好一张照片。

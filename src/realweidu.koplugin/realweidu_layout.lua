@@ -1,4 +1,4 @@
--- wereadshelf_layout.lua — pure layout + pagination math for the 4-column
+-- realweidu_layout.lua — pure layout + pagination math for the 4-column
 -- cover grid (no KOReader deps; unit-tested in spec/test_layout.lua).
 -- Reference values are UI-SPEC v1 numbers measured for PW5 (1236 px wide);
 -- they are scaled linearly by screen_w / 1236 on other screens.

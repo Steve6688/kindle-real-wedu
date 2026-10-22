@@ -35,14 +35,14 @@ jobs:
 
       - name: Parse all plugin Lua sources
         run: |
-          luajit -e 'local p="src/wereadshelf.koplugin"; for f in io.popen("find "..p.." -name \\\"*.lua\\\""):lines() do local ok,e=loadfile(f); assert(ok,e) end'
+          luajit -e 'local p="src/realweidu.koplugin"; for f in io.popen("find "..p.." -name \\\"*.lua\\\""):lines() do local ok,e=loadfile(f); assert(ok,e) end'
 
       - name: No SimpleUI dependency (0.3.7)
         run: |
           test ! -e vendor/simpleui.koplugin
-          ! grep -rnE 'require\(?\s*"(features|infra|screens)/sui_' src/wereadshelf.koplugin
+          ! grep -rnE 'require\(?\s*"(features|infra|screens)/sui_' src/realweidu.koplugin
 
       - name: Embedded weread uses only rweread.* modules (0.4.0)
         run: |
-          ! grep -rnE 'require\("(weread\.(lib|ui)|integrations)\.' src/wereadshelf.koplugin/rweread
-          test -f src/wereadshelf.koplugin/rweread/LICENSE && test -f src/wereadshelf.koplugin/rweread/NOTICE
+          ! grep -rnE 'require\("(weread\.(lib|ui)|integrations)\.' src/realweidu.koplugin/rweread
+          test -f src/realweidu.koplugin/rweread/LICENSE && test -f src/realweidu.koplugin/rweread/NOTICE

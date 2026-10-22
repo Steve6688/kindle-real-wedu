@@ -62,7 +62,7 @@ function H:init()
                 local pa, pm, px = stat(ps)
                 local f = io.open((os.getenv("WSPREV_OUT") or "/tmp/korprev/pageturn") .. ".txt", "w")
                 f:write(string.format("plugin=%s turns=40 handler avg %.1f ms median %.1f max %.1f | repaint avg %.1f ms median %.1f max %.1f | full_refresh_count=%s anim_patched=%s\n",
-                    tostring(self.ui.wereadshelf ~= nil), ha, hm, hx, pa, pm, px, tostring(UIManager.FULL_REFRESH_COUNT),
+                    tostring(self.ui.realweidu ~= nil), ha, hm, hx, pa, pm, px, tostring(UIManager.FULL_REFRESH_COUNT),
                     tostring(require("apps/reader/modules/readerview")._wrs_orig_anim ~= nil)))
                 f:close()
                 UIManager:quit()
@@ -72,21 +72,21 @@ function H:init()
         if MODE ~= "reader" and MODE ~= "font" and MODE ~= "sheet" then return end
         _G.__wsprev_done = true
         UIManager:scheduleIn(4, function()
-            local P = self.ui.wereadshelf
+            local P = self.ui.realweidu
             local menu_ok = P and P.showReaderMenu and P.showReaderMenu(self.ui)
             local top = UIManager._window_stack[#UIManager._window_stack].widget
             for i = #UIManager._window_stack, 1, -1 do
                 local w = UIManager._window_stack[i].widget
-                if w.name == "wereadshelf_readermenu" then top = w end
+                if w.name == "realweidu_readermenu" then top = w end
             end
             for i = #UIManager._window_stack, 1, -1 do -- box only: drop the stray "no weread" notice
                 local w = UIManager._window_stack[i] and UIManager._window_stack[i].widget
-                if w and w.text and w.name ~= "wereadshelf_readermenu" then UIManager:close(w) end
+                if w and w.text and w.name ~= "realweidu_readermenu" then UIManager:close(w) end
             end
             if MODE == "sheet" and top.toggleFont then top:toggleFont() end
             if MODE == "font" and top.refresh then top.font_open = true; top:refresh("ui") end
             if os.getenv("WSPREV_SET") and top.setStep then
-                local Logic = require("wereadshelf_logic")
+                local Logic = require("realweidu_logic")
                 top:setStep(Logic.SLIDERS[1], 6)               -- 字号 -> 26
                 top:setStep(Logic.SLIDERS[4], 4)               -- 边距 -> 20
                 top:toggleIndent()
@@ -129,7 +129,7 @@ function H:init()
         UIManager:scheduleIn(5, shot); return
     end
     UIManager:scheduleIn(3, function()
-        local P = self.ui.wereadshelf
+        local P = self.ui.realweidu
         if MODE == "fmmenu" then
             if self.ui.menu then
                 local m = self.ui.menu
@@ -157,7 +157,7 @@ function H:init()
             -- weread 1.6.0's own progress dialog, as fast download drives it
             package.path = os.getenv("WSPREV_WEREAD") .. "/?.lua;" .. package.path
             local DD = require("rweread.ui.download_dialog")
-            local F = require("wereadshelf_fastdl")
+            local F = require("realweidu_fastdl")
             P.showGrid()
             UIManager:scheduleIn(1, function()
                 local d = DD:new{ title = "下载中 · 第 37/120 章（3 章并行）：第三十七章 长安的荔枝",

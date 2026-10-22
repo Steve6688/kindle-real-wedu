@@ -1,7 +1,7 @@
--- Unit tests for wereadshelf_logic.lua (reader menu / font panel / pages helpers).
+-- Unit tests for realweidu_logic.lua (reader menu / font panel / pages helpers).
 local here = arg[0]:match("^(.*)/[^/]+$") or "."
-package.path = here .. "/../wereadshelf.koplugin/?.lua;" .. package.path
-local L = require("wereadshelf_logic")
+package.path = here .. "/../realweidu.koplugin/?.lua;" .. package.path
+local L = require("realweidu_logic")
 local fails, n = 0, 0
 local function check(name, c) n = n + 1; print((c and "ok   " or "FAIL ") .. name); if not c then fails = fails + 1 end end
 local S = {}; for _, s in ipairs(L.SLIDERS) do S[s.id] = s end

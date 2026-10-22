@@ -1,4 +1,4 @@
--- wereadshelf_readermenu.lua — WeRead-style reading menu (top bar + 5-icon
+-- realweidu_readermenu.lua — WeRead-style reading menu (top bar + 5-icon
 -- bottom bar) and the 字体设置 panel, shown over KOReader's ReaderUI.
 -- Everything it does goes through ReaderUI's own events/modules:
 --   ToggleBookmark            apps/reader/modules/readerbookmark.lua:370, isPageBookmarked :423
@@ -26,11 +26,11 @@ local UIManager       = require("ui/uimanager")
 local logger          = require("logger")
 local Screen          = Device.screen
 
-local U     = require("wereadshelf_ui")
-local Logic = require("wereadshelf_logic")
+local U     = require("realweidu_ui")
+local Logic = require("realweidu_logic")
 
 local RM = InputContainer:extend{
-    name = "wereadshelf_readermenu",
+    name = "realweidu_readermenu",
     ui = nil,              -- ReaderUI
     on_back = nil,         -- function() back to shelf
     weread = nil,          -- weread plugin instance (optional)
@@ -500,7 +500,7 @@ function RM:setStep(s, i)
         conf.h_page_margins = { v, v } -- persisted by ReaderConfig with the other configurables
     end
     local ok, e = pcall(send, self.ui, s.event, Logic.event_arg(s, v))
-    if not ok then logger.warn("wereadshelf: font panel", s.event, e) end
+    if not ok then logger.warn("realweidu: font panel", s.event, e) end
     self:refresh("ui")
 end
 function RM:setFont(face)

@@ -24,7 +24,7 @@ local UpdaterUI = require("rweread.ui.updater")
 local _ = PluginUtil.tr
 
 -- Real微读 0.4.0: weread.koplugin 1.6.0 (AGPL-3.0, (C) finlater and
--- contributors, see rweread/LICENSE + NOTICE) embedded in wereadshelf.koplugin.
+-- contributors, see rweread/LICENSE + NOTICE) embedded in realweidu.koplugin.
 -- Changes vs upstream: module namespace weread.* -> rweread.*, no own main-menu
 -- entry (folded into ☰ Real微读), self-updater disabled (it would replace the
 -- plugin folder with upstream weread.koplugin), Real微读 shelf redirect and
@@ -210,7 +210,7 @@ function WeReadPlugin:init()
         end,
     }
     self:onDispatcherRegisterActions()
-    -- Real微读: menu items are folded into ☰ Real微读 (wereadshelf main.lua)
+    -- Real微读: menu items are folded into ☰ Real微读 (realweidu main.lua)
     self.integrations = Integrations
     self.integrations.register(self)
     local read_report = self.settings:get("read_report")

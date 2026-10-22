@@ -68,12 +68,12 @@ function FaceFactory:findEmojiFont()
     end
 
     local candidates = {
-        "plugins/wereadshelf.koplugin/rweread/fonts/NotoEmoji-Regular.ttf",
+        "plugins/realweidu.koplugin/rweread/fonts/NotoEmoji-Regular.ttf",
     }
     local ok_ds, DataStorage = pcall(require, "datastorage")
     if ok_ds then
         candidates[#candidates + 1] = DataStorage:getDataDir()
-            .. "/plugins/wereadshelf.koplugin/rweread/fonts/NotoEmoji-Regular.ttf"
+            .. "/plugins/realweidu.koplugin/rweread/fonts/NotoEmoji-Regular.ttf"
     end
     for _, path in ipairs(candidates) do
         local abs = resolve(path)

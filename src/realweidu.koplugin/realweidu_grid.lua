@@ -1,4 +1,4 @@
--- wereadshelf_grid.lua — full-screen 4-column cover grid "书架" page.
+-- realweidu_grid.lua — full-screen 4-column cover grid "书架" page.
 -- Built only from stock KOReader widgets (frontend/ui/widget/*); own bottom bar.
 -- Paging: page / page_num, onNextPage / onPrevPage / onGotoPage (swipes, page keys).
 -- E-ink: no animation, only black / white / #D9D9D9, whole-page flips.
@@ -25,8 +25,8 @@ local LeftContainer   = require("ui/widget/container/leftcontainer")
 local logger          = require("logger")
 local Screen          = Device.screen
 
-local Layout = require("wereadshelf_layout")
-local U      = require("wereadshelf_ui")
+local Layout = require("realweidu_layout")
+local U      = require("realweidu_ui")
 
 local BLACK = Blitbuffer.COLOR_BLACK
 local WHITE = Blitbuffer.COLOR_WHITE
@@ -40,7 +40,7 @@ local function face(px)
 end
 
 local ShelfGrid = InputContainer:extend{
-    name = "wereadshelf_grid",       -- BarInjection matches on this name
+    name = "realweidu_grid",       -- BarInjection matches on this name
     covers_fullscreen = true,
     books = nil,                     -- from Data.get_shelf()
     icons_dir = nil,
@@ -163,7 +163,7 @@ function ShelfGrid:_buildCover(book)
             -- page's blitbuffers ourselves on every flip / close.
             file_do_cache = false,
         })
-        if ok and w then inner = w else logger.warn("wereadshelf: cover failed", book.cover, w) end
+        if ok and w then inner = w else logger.warn("realweidu: cover failed", book.cover, w) end
     end
     if not inner then
         -- placeholder: white box with the title centred (no gray text)

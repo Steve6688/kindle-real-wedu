@@ -1,8 +1,8 @@
--- Offline test + virtual-clock benchmark for wereadshelf_fastdl
+-- Offline test + virtual-clock benchmark for realweidu_fastdl
 -- (stubbed weread 1.6.0 downloader, worker processes and UIManager).
 -- Usage: luajit test_fastdl.lua [path/to/other_fastdl.lua]  (optional comparison)
 local here = arg[0]:match("^(.*)/[^/]+$") or "."
-package.path = here .. "/../wereadshelf.koplugin/?.lua;" .. package.path
+package.path = here .. "/../realweidu.koplugin/?.lua;" .. package.path
 local fails, n = 0, 0
 local function check(name, c) n = n + 1; print((c and "ok   " or "FAIL ") .. name); if not c then fails = fails + 1 end end
 
@@ -67,7 +67,7 @@ local function world(module_path)
     package.loaded["libs/libkoreader-lfs"] = { attributes = function() return "file" end }
     local F
     if module_path then
-        package.loaded["wereadshelf_fastdl"] = nil
+        package.loaded["realweidu_fastdl"] = nil
         F = dofile(module_path)
         F._now = function() return T end
         F.proc = {
@@ -109,7 +109,7 @@ local function world(module_path)
     return run, D
 end
 
-local NEW = here .. "/../wereadshelf.koplugin/wereadshelf_fastdl.lua"
+local NEW = here .. "/../realweidu.koplugin/realweidu_fastdl.lua"
 local NCH = 60
 local base_dl = world(nil)(NCH)
 local run = world(NEW)

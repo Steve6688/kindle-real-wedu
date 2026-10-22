@@ -1,6 +1,6 @@
 -- Smoke test for main.lua with stubbed KOReader modules (no SimpleUI: removed in 0.3.7) (not real UI).
 local here = arg[0]:match("^(.*)/[^/]+$") or "."
-package.path = here .. "/../wereadshelf.koplugin/?.lua;" .. package.path
+package.path = here .. "/../realweidu.koplugin/?.lua;" .. package.path
 local shown, ticks, closed = {}, {}, {}
 local function cls() local c = {}; c.__index = c
     function c:extend(t) t = t or {}; t.__index = t; return setmetatable(t, { __index = self }) end
@@ -19,13 +19,13 @@ package.loaded["logger"] = { warn = print, info = function() end, dbg = function
 local Grid = cls()
 function Grid:setKeyword(k) self.keyword = k end
 function Grid:onCloseWidget() end
-package.loaded["wereadshelf_grid"] = Grid
-package.loaded["wereadshelf_ui"] = { icons_dir = "." }
+package.loaded["realweidu_grid"] = Grid
+package.loaded["realweidu_ui"] = { icons_dir = "." }
 local Pages = { Discover = cls(), Me = cls() }
 function Pages.Me:refresh() self.refreshed = (self.refreshed or 0) + 1 end
-package.loaded["wereadshelf_pages"] = Pages
+package.loaded["realweidu_pages"] = Pages
 local RMcls = cls()
-package.loaded["wereadshelf_readermenu"] = RMcls
+package.loaded["realweidu_readermenu"] = RMcls
 package.loaded["ui/widget/buttondialog"] = cls()
 package.loaded["ui/event"] = { new = function(_, name, ...) return { name = name, args = { ... } } end }
 local broadcast = {}
@@ -42,18 +42,18 @@ package.loaded["ui/elements/filemanager_menu_order"] = { main = { "history", "ex
 local WR = cls()
 function WR:getMainMenuItems() return { { text = "扫码登录" }, { text = "书架" }, { text = "公众号" } } end
 package.loaded["rweread.plugin"] = WR
-local P = dofile(here .. "/../wereadshelf.koplugin/main.lua")
+local P = dofile(here .. "/../realweidu.koplugin/main.lua")
 local S = mem_settings(); P._settings_override = S
 local menu_items = {}
 local inst = P:new{ ui = { menu = { registerToMainMenu = function(_, p) p:addToMainMenu(menu_items) end } }, path = "/x" }
 inst:init(); for _, f in ipairs(ticks) do f() end
 local fails, n = 0, 0
 local function check(name, c) n = n + 1; print((c and "ok   " or "FAIL ") .. name); if not c then fails = fails + 1 end end
-check("main menu has four focused actions", menu_items.wereadshelf ~= nil
-    and #menu_items.wereadshelf.sub_item_table == 5
-    and menu_items.wereadshelf.sub_item_table[4].text == "阅读设置…"
-    and menu_items.wereadshelf.sub_item_table[1].text == "打开 Real微读"
-    and menu_items.wereadshelf.sub_item_table[2].text == "登录与同步书架")
+check("main menu has four focused actions", menu_items.realweidu ~= nil
+    and #menu_items.realweidu.sub_item_table == 5
+    and menu_items.realweidu.sub_item_table[4].text == "阅读设置…"
+    and menu_items.realweidu.sub_item_table[1].text == "打开 Real微读"
+    and menu_items.realweidu.sub_item_table[2].text == "登录与同步书架")
 check("v0.3.5 default ON: fresh install startup opens Real微读 (no weread yet -> its notice)",
     #shown == 1 and tostring(shown[1].text):find("weread.koplugin") ~= nil)
 check("v0.3.7 no SimpleUI writes / backups", S:readSetting("preset_backup") == nil and S:readSetting("landing_backup") == nil)
@@ -64,7 +64,7 @@ UIManager_stack._window_stack = { { widget = { name = "sui_homescreen" } } }
 local before_top = #shown
 check("stale SimpleUI Home Screen on top -> shelf re-raised", P.ensureOnTop() and #shown == before_top + 1)
 UIManager_stack._window_stack = nil
-check("v0.3.5 ☰ entry pinned first", package.loaded["ui/elements/filemanager_menu_order"].main[1] == "wereadshelf_enter")
+check("v0.3.5 ☰ entry pinned first", package.loaded["ui/elements/filemanager_menu_order"].main[1] == "realweidu_enter")
 -- no weread loaded -> friendly InfoMessage, no crash
 P.showGrid()
 check("no weread -> InfoMessage shown", shown[#shown] and tostring(shown[#shown].text):find("weread.koplugin") ~= nil)
@@ -258,12 +258,25 @@ do
     local mi = {}
     local pi = P:new{ ui = { weread = inst2 } }
     pi:addToMainMenu(mi)
-    local sub = mi.wereadshelf.sub_item_table[5]
+    local sub = mi.realweidu.sub_item_table[5]
     check("☰ single Real微读 entry with weread functions folded in", mi.weread == nil and sub.text == "微信读书功能"
         and #sub.sub_item_table_func() == 3)
     ticks = {}; inst2.real_shelf_redirect(); local nb = #shown; for _, f in ipairs(ticks) do f() end
     check("embedded 书架 redirect -> Real微读 grid", #shown > nb)
     _G.G_reader_settings = nil
+end
+-- 0.4.1: rename migration wereadshelf -> realweidu
+do
+    local saved = { plugins_disabled = { weread = true } }
+    local G = { data = { wereadshelf_last_tab = "me", other = 1 }, readSetting = function(self, k) return self.data[k] end,
+        saveSetting = function(self, k, v) self.data[k] = v end, flush = function() end }
+    G.data.plugins_disabled = saved.plugins_disabled
+    P.migrate(G, nil)
+    check("G_reader_settings wereadshelf_* -> realweidu_*", G.data.realweidu_last_tab == "me" and G.data.wereadshelf_last_tab == nil and G.data.other == 1)
+    check("old wereadshelf.koplugin disabled, weread stays disabled", G.data.plugins_disabled.wereadshelf == true and G.data.plugins_disabled.weread == true)
+    local g = { gesture_fm = { tap_left = { wereadshelf_open = true }, swipe = { realweidu_open = true } } }
+    P._rename_ids(g)
+    check("gesture action ids migrated", g.gesture_fm.tap_left.realweidu_open == true and g.gesture_fm.tap_left.wereadshelf_open == nil and g.gesture_fm.swipe.realweidu_open)
 end
 P.exitToKindle(); check("exit to Kindle = KOReader Exit event", broadcast[#broadcast] and broadcast[#broadcast].name == "Exit")
 -- reader hook
@@ -271,7 +284,7 @@ local zones
 local rui = { document = {}, registerTouchZones = function(_, z) zones = z end }
 S:saveSetting("reader_menu", true)
 local rinst = P:new{ ui = rui, path = "/x" }; rinst:init()
-check("reader: centre zone registered", zones and zones[1].id == "wereadshelf_menu_tap" and zones[1].overrides[1] == "tap_forward"
+check("reader: centre zone registered", zones and zones[1].id == "realweidu_menu_tap" and zones[1].overrides[1] == "tap_forward"
     and zones[1].screen_zone.ratio_x == 0.25 and zones[1].screen_zone.ratio_w == 0.5)
 zones[1].handler()
 check("reader: tap shows WeRead menu", getmetatable(shown[#shown]).__index == RMcls and shown[#shown].ui == rui)
@@ -279,21 +292,21 @@ S:saveSetting("reader_menu", false); zones = nil
 P:new{ ui = rui, path = "/x" }:init()
 check("reader: no hook when setting off", zones == nil)
 -- v0.3.4 enter / exit
-check("top-level menu entry 进入 Real微读", menu_items.wereadshelf_enter and menu_items.wereadshelf_enter.text == "进入 Real微读")
+check("top-level menu entry 进入 Real微读", menu_items.realweidu_enter and menu_items.realweidu_enter.text == "进入 Real微读")
 P.leaveToKOReader()
 check("返回 KOReader pauses auto-enter for this session", not P.shouldAutoEnter())
 ticks = {}; P:new{ ui = { menu = { registerToMainMenu = function() end } }, path = "/x" }:init()
 local nshown = #shown; for _, f in ipairs(ticks) do f() end
 check("paused: FM re-init does not open shelf", #shown == nshown)
-local before = #shown; menu_items.wereadshelf_enter.callback()
+local before = #shown; menu_items.realweidu_enter.callback()
 check("menu entry re-enters shelf + clears pause", #shown == before + 1 and P.shouldAutoEnter())
 ticks = {}; P:new{ ui = { menu = { registerToMainMenu = function() end } }, path = "/x" }:init()
 nshown = #shown; for _, f in ipairs(ticks) do f() end
-check("always on: FM init (start / book closed) opens shelf", #shown > nshown and shown[#shown].active_action_id == "wereadshelf_open")
+check("always on: FM init (start / book closed) opens shelf", #shown > nshown and shown[#shown].active_action_id == "realweidu_open")
 local homed = false
 local rui2 = { document = {}, onHome = function() homed = true end }
 local ri2 = P:new{ ui = rui2, path = "/x" }
-check("dispatcher event from reader closes book", ri2:onWeReadShelfOpen() and homed)
+check("dispatcher event from reader closes book", ri2:onRealWeiduOpen() and homed)
 -- BUG-06: empty (but readable) shelf -> empty grid, not the 未同步 dialog
 local orig_gs = fm.weread.library_db.getShelf
 fm.weread.library_db.getShelf = function() return {} end

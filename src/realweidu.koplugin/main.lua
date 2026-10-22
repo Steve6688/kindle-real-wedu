@@ -1,4 +1,4 @@
--- wereadshelf.koplugin — "Real微读": standalone WeRead-style home for KOReader
+-- realweidu.koplugin — "Real微读": standalone WeRead-style home for KOReader
 -- (发现 / 书架 / 我 with its own bottom bar) + 4-column cover grid, backed by
 -- weread.koplugin's local shelf cache. Does not modify weread files and does
 -- not need (or touch) SimpleUI (removed in 0.3.7).
@@ -19,7 +19,7 @@ local logger          = require("logger")
 
 -- Must be required at top level: KOReader only puts the plugin dir on
 -- package.path while dofile()'ing main.lua (frontend/pluginloader.lua:242-244).
-local Data   = require("wereadshelf_data")
+local Data   = require("realweidu_data")
 -- 0.4.0: weread.koplugin 1.6.0 is embedded (rweread/, AGPL-3.0, finlater and
 -- contributors). Its modules are required lazily at runtime too, so keep this
 -- plugin's folder on package.path after loading.
@@ -30,17 +30,17 @@ do
     end
 end
 local okw, WeReadPlugin = pcall(require, "rweread.plugin")
-if not okw then logger.warn("wereadshelf: embedded weread failed to load:", WeReadPlugin); WeReadPlugin = nil end
-local FastDL = require("wereadshelf_fastdl")
-local Layout = require("wereadshelf_layout")
+if not okw then logger.warn("realweidu: embedded weread failed to load:", WeReadPlugin); WeReadPlugin = nil end
+local FastDL = require("realweidu_fastdl")
+local Layout = require("realweidu_layout")
 local ShelfGrid -- lazy (pulls in UI widgets)
 
-local QA_ID       = "wereadshelf_open"     -- 书架 (tab id)
-local QA_DISCOVER = "wereadshelf_discover" -- 发现
-local QA_ME       = "wereadshelf_me"       -- 我
+local QA_ID       = "realweidu_open"     -- 书架 (tab id)
+local QA_DISCOVER = "realweidu_discover" -- 发现
+local QA_ME       = "realweidu_me"       -- 我
 
-local WeReadShelf = WidgetContainer:extend{
-    name = "wereadshelf",
+local RealWeidu = WidgetContainer:extend{
+    name = "realweidu",
     is_doc_only = false,
 }
 
@@ -52,23 +52,110 @@ local function info(text)
     UIManager:show(InfoMessage:new{ text = text })
 end
 
+-- 0.4.1: renamed wereadshelf.koplugin -> realweidu.koplugin. One-time
+-- migration of our own settings (weread's settings/weread.lua + weread/ data
+-- are untouched). Idempotent; never overwrites an existing new-name value.
+local LEGACY = "wereadshelf"
+local function rename_ids(t, depth)
+    if type(t) ~= "table" or depth > 6 then return false end
+    local changed = false
+    for k, v in pairs(t) do
+        if type(k) == "string" and k:find(LEGACY, 1, true) == 1 then
+            local nk = "realweidu" .. k:sub(#LEGACY + 1)
+            if t[nk] == nil then t[nk] = v end
+            t[k] = nil; changed = true
+        elseif type(v) == "string" and v:find(LEGACY .. "_", 1, true) == 1 then
+            t[k] = "realweidu" .. v:sub(#LEGACY + 1); changed = true
+        end
+        if type(v) == "table" and rename_ids(v, depth + 1) then changed = true end
+    end
+    return changed
+end
+RealWeidu._rename_ids = function(t) return rename_ids(t, 0) end
+function RealWeidu.migrate(G, settings_dir)
+    G = G or rawget(_G, "G_reader_settings")
+    local lfs_ok, lfs = pcall(require, "libs/libkoreader-lfs")
+    if not settings_dir then
+        local ok, DS = pcall(require, "datastorage")
+        settings_dir = ok and DS:getSettingsDir() or nil
+    end
+    local moved = {}
+    -- 1. settings/wereadshelf*.lua -> settings/realweidu*.lua
+    if settings_dir and lfs_ok then
+        for f in lfs.dir(settings_dir) do
+            if f:find(LEGACY, 1, true) == 1 and f:match("%.lua") then
+                local nf = "realweidu" .. f:sub(#LEGACY + 1)
+                if not lfs.attributes(settings_dir .. "/" .. nf, "mode") then
+                    if os.rename(settings_dir .. "/" .. f, settings_dir .. "/" .. nf) then table.insert(moved, nf) end
+                end
+            end
+        end
+        -- 2. gesture / profile action ids (wereadshelf_open -> realweidu_open)
+        for _, f in ipairs({ "gestures.lua", "profiles.lua" }) do
+            local path = settings_dir .. "/" .. f
+            if lfs.attributes(path, "mode") then
+                local ok, LS = pcall(require, "luasettings")
+                if ok then
+                    local st = LS:open(path)
+                    if rename_ids(st.data, 0) then st:flush(); table.insert(moved, f) end
+                end
+            end
+        end
+    end
+    if G and G.data then
+        -- 3. G_reader_settings keys wereadshelf_* (and nested action ids)
+        local dirty = false
+        for k, v in pairs(G.data) do
+            if type(k) == "string" and k:find(LEGACY, 1, true) == 1 then
+                local nk = "realweidu" .. k:sub(#LEGACY + 1)
+                if G.data[nk] == nil then G.data[nk] = v end
+                G.data[k] = nil; dirty = true
+            end
+        end
+        -- 4. the old wereadshelf.koplugin folder, if still present, stays off
+        local dis = G:readSetting("plugins_disabled") or {}
+        if dis.realweidu then dis.realweidu = nil; dirty = true end
+        if not dis[LEGACY] then dis[LEGACY] = true; dirty = true end
+        if dirty then G:saveSetting("plugins_disabled", dis); if G.flush then G:flush() end end
+    end
+    if #moved > 0 then logger.info("realweidu: migrated", table.concat(moved, ", ")) end
+    return moved
+end
+-- An old wereadshelf.koplugin loaded in this same session (it sorts after
+-- us) is refused before it can create a second shelf / menu entry.
+do
+    local okp, PL = pcall(require, "pluginloader")
+    if okp and type(PL) == "table" and not PL._realweidu_guard then
+        PL._realweidu_guard = true
+        local orig = PL.createPluginInstance
+        PL.createPluginInstance = function(pl, plugin, attr)
+            if plugin and plugin.name == LEGACY then
+                logger.info("realweidu: ignoring old wereadshelf.koplugin (renamed to realweidu.koplugin)")
+                return nil, "superseded by realweidu.koplugin"
+            end
+            return orig(pl, plugin, attr)
+        end
+    end
+end
+pcall(RealWeidu.migrate)
+
 -- Own settings file (only written by explicit menu actions).
 local _settings
 local function settings()
     if not _settings then
         local DataStorage = require("datastorage")
         local LuaSettings = require("luasettings")
-        _settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/wereadshelf.lua")
+        _settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/realweidu.lua")
     end
     return _settings
 end
-WeReadShelf._settings_override = nil -- tests
-local function S() return WeReadShelf._settings_override or settings() end
+RealWeidu._settings_override = nil -- tests
+local function S() return RealWeidu._settings_override or settings() end
 -- v0.3.5: reader menu defaults to ON; only an explicit false turns it off.
 local function on(key) return S():readSetting(key) ~= false end
-WeReadShelf.isOn = on
-WeReadShelf.ENTER_TEXT = "进入 Real微读"
-WeReadShelf.VERSION = "0.4.0"
+RealWeidu.isOn = on
+RealWeidu.ENTER_TEXT = "进入 Real微读"
+RealWeidu.VERSION = "0.4.1"
 
 -- Put 「进入 Real微读」 at the top of KOReader's ☰ (main) menu tab instead of
 -- after Exit (items missing from the order table are appended at the end).
@@ -77,8 +164,8 @@ local function pin_menu_entry()
         local ok, order = pcall(require, mod)
         if ok and type(order) == "table" and type(order.main) == "table" then
             local has = false
-            for _, k in ipairs(order.main) do if k == "wereadshelf_enter" then has = true end end
-            if not has then table.insert(order.main, 1, "wereadshelf_enter") end
+            for _, k in ipairs(order.main) do if k == "realweidu_enter" then has = true end end
+            if not has then table.insert(order.main, 1, "realweidu_enter") end
         end
     end
 end
@@ -88,7 +175,7 @@ end
 -- and data dir (<data>/weread), so login, cookies, cache and downloaded books
 -- carry over untouched. A separately installed weread.koplugin (loaded before
 -- us) is detached for this session and disabled for the next start.
-WeReadShelf._plugin_class = nil -- tests
+RealWeidu._plugin_class = nil -- tests
 local function detach_foreign(ui, old)
     for i = #ui, 1, -1 do if ui[i] == old then table.remove(ui, i) end end
     if type(ui.active_widgets) == "table" then
@@ -108,26 +195,26 @@ local function detach_foreign(ui, old)
             if G.flush then G:flush() end
         end
     end
-    WeReadShelf._detached_foreign = true
-    logger.info("wereadshelf: separate weread.koplugin detached and disabled (now built into Real微读)")
+    RealWeidu._detached_foreign = true
+    logger.info("realweidu: separate weread.koplugin detached and disabled (now built into Real微读)")
 end
 
-function WeReadShelf.attachWeread(ui)
+function RealWeidu.attachWeread(ui)
     if type(ui) ~= "table" then return nil end
     local old = ui.weread
     if old and old._real_embedded then return old end
     if old then detach_foreign(ui, old) end
-    local cls = WeReadShelf._plugin_class or WeReadPlugin
+    local cls = RealWeidu._plugin_class or WeReadPlugin
     if not cls then ui.weread = nil; return nil end
     local ok, inst = pcall(cls.new, cls, { ui = ui, dialog = ui.dialog, view = ui.view, document = ui.document,
         path = (plugin_dir or ".") .. "/rweread", _real_embedded = true })
     if not ok or type(inst) ~= "table" then
-        logger.warn("wereadshelf: embedded weread init failed:", inst)
+        logger.warn("realweidu: embedded weread init failed:", inst)
         ui.weread = nil
         return nil
     end
     inst._real_embedded = true
-    inst.real_shelf_redirect = function() return WeReadShelf.toRealShelf() end
+    inst.real_shelf_redirect = function() return RealWeidu.toRealShelf() end
     inst._wrs_redirect = true
     if type(ui.registerModule) == "function" then ui:registerModule("weread", inst) else ui.weread = inst end
     return inst
@@ -136,9 +223,9 @@ end
 local current_grid, current_page, active_tab
 local close_pages, ui_icons, call_weread -- defined further below
 
-function WeReadShelf:init()
+function RealWeidu:init()
     plugin_dir = self.path or plugin_dir
-    WeReadShelf.attachWeread(self.ui)
+    RealWeidu.attachWeread(self.ui)
     pin_menu_entry()
     if self.ui and self.ui.menu then
         self.ui.menu:registerToMainMenu(self)
@@ -155,35 +242,35 @@ function WeReadShelf:init()
     local in_fm = self.ui and not self.ui.document
     if in_fm then
         Data._startup_done = true
-        if WeReadShelf.shouldAutoEnter() then
-            UIManager:nextTick(function() WeReadShelf.showGrid() end)
+        if RealWeidu.shouldAutoEnter() then
+            UIManager:nextTick(function() RealWeidu.showGrid() end)
             if UIManager.scheduleIn then
-                UIManager:scheduleIn(1.5, function() WeReadShelf.ensureOnTop() end)
+                UIManager:scheduleIn(1.5, function() RealWeidu.ensureOnTop() end)
             end
         end
     end
     self:onDispatcherRegisterActions()
     -- v0.3.8: every weread 「书架」 entry point opens Real微读's shelf.
-    if self.ui and self.ui.weread then pcall(WeReadShelf.redirectWereadShelf, self.ui.weread) end
+    if self.ui and self.ui.weread then pcall(RealWeidu.redirectWereadShelf, self.ui.weread) end
     -- v0.3.8: smooth page turns (no animation, fewer full flashes); session only.
-    if self.ui and self.ui.document then pcall(WeReadShelf.applySmoothTurns) end
+    if self.ui and self.ui.document then pcall(RealWeidu.applySmoothTurns) end
     -- v0.3.6 faster weread downloads (default ON; 更多设置 → 快速下载).
     if on("fast_download") then
         local ok, e = pcall(FastDL.install)
-        if not ok then logger.warn("wereadshelf: fast download not installed:", e) end
+        if not ok then logger.warn("realweidu: fast download not installed:", e) end
     end
 end
 
-function WeReadShelf.shouldAutoEnter()
+function RealWeidu.shouldAutoEnter()
     return not Data._paused -- 返回 KOReader pauses only until next start / re-entry
 end
 
 -- Something (e.g. a stale SimpleUI Home Screen) may still be shown after our first
 -- tick; check again shortly and bring the shelf back to the front.
 local function is_ours(w)
-    return w and (w.name == "wereadshelf_grid" or w.name == "wereadshelf_discover" or w.name == "wereadshelf_me")
+    return w and (w.name == "realweidu_grid" or w.name == "realweidu_discover" or w.name == "realweidu_me")
 end
-function WeReadShelf.ensureOnTop()
+function RealWeidu.ensureOnTop()
     if Data._paused then return false end
     local RUI = package.loaded["apps/reader/readerui"]
     if RUI and RUI.instance then return false end -- a book is open: never cover it
@@ -192,74 +279,78 @@ function WeReadShelf.ensureOnTop()
     if type(top) ~= "table" or is_ours(top) then return false end
     local nm = tostring(top.name or "")
     if nm == "filemanager" or nm == "homescreen" or nm:find("^sui_") then
-        WeReadShelf.showGrid(); return true
+        RealWeidu.showGrid(); return true
     end
     return false
 end
 
 -- Gesture / dispatcher action: 「打开 Real微读」 (assignable in KOReader
 -- 设置 → 手势管理, also usable from profiles / QuickMenu).
-function WeReadShelf:onDispatcherRegisterActions()
+function RealWeidu:onDispatcherRegisterActions()
     local ok, Dispatcher = pcall(require, "dispatcher")
     if not ok or type(Dispatcher) ~= "table" or type(Dispatcher.registerAction) ~= "function" then return end
+    pcall(Dispatcher.registerAction, Dispatcher, "realweidu_open", {
+        category = "none", event = "RealWeiduOpen", title = "打开 Real微读", general = true,
+    })
+    -- legacy id from <=0.4.0 (gestures not yet migrated keep working)
     pcall(Dispatcher.registerAction, Dispatcher, "wereadshelf_open", {
-        category = "none", event = "WeReadShelfOpen", title = "打开 Real微读", general = true,
+        category = "none", event = "RealWeiduOpen", title = "打开 Real微读（旧）", general = true,
     })
 end
 
-function WeReadShelf:onWeReadShelfOpen()
-    WeReadShelf.enter(self.ui)
+function RealWeidu:onRealWeiduOpen()
+    RealWeidu.enter(self.ui)
     return true
 end
 
 -- One-tap entry from plain KOReader (main-menu item, gesture, tab tap).
 -- In the reader it closes the book first (to the file manager), then shows
 -- the shelf.
-function WeReadShelf.enter(ui)
+function RealWeidu.enter(ui)
     Data._paused = false
     if ui and ui.document and type(ui.onHome) == "function" then
         local ok = pcall(ui.onHome, ui)
-        if ok and not WeReadShelf.shouldAutoEnter() then
-            UIManager:scheduleIn(0.3, function() WeReadShelf.showGrid() end)
+        if ok and not RealWeidu.shouldAutoEnter() then
+            UIManager:scheduleIn(0.3, function() RealWeidu.showGrid() end)
         end
         return
     end
-    return WeReadShelf.showGrid()
+    return RealWeidu.showGrid()
 end
 
 -- 「返回 KOReader」: close our pages, stay in KOReader's file browser for this
 -- session. Settings are untouched; the mode comes back on next start, after
 -- re-entry via menu / gesture, or by tapping a bottom-bar tab.
-function WeReadShelf.leaveToKOReader()
+function RealWeidu.leaveToKOReader()
     Data._paused = true
     close_pages()
     info("已返回 KOReader。\n再次进入：KOReader 菜单 ☰ 第一项「进入 Real微读」，或手势「打开 Real微读」；下次启动自动进入。")
 end
 
-function WeReadShelf:addToMainMenu(menu_items)
+function RealWeidu:addToMainMenu(menu_items)
     -- v0.3.4: one obvious top-level entry (first page of the KOReader menu).
     local ui = self.ui
-    menu_items.wereadshelf_enter = {
-        text = WeReadShelf.ENTER_TEXT,
+    menu_items.realweidu_enter = {
+        text = RealWeidu.ENTER_TEXT,
         sorting_hint = "main",
-        callback = function() WeReadShelf.enter(ui) end,
+        callback = function() RealWeidu.enter(ui) end,
     }
-    menu_items.wereadshelf = {
+    menu_items.realweidu = {
         text = "Real微读",
         sorting_hint = "tools",
         sub_item_table = {
-            { text = "打开 Real微读", callback = function() WeReadShelf.showGrid() end },
+            { text = "打开 Real微读", callback = function() RealWeidu.showGrid() end },
             {
                 text = "登录与同步书架",
-                callback = function() WeReadShelf.openWereadManagement() end,
+                callback = function() RealWeidu.openWereadManagement() end,
                 separator = true,
             },
             {
                 text = "阅读时使用 Real微读菜单",
                 checked_func = function() return on("reader_menu") end,
-                callback = function() WeReadShelf.toggleSetting("reader_menu") end,
+                callback = function() RealWeidu.toggleSetting("reader_menu") end,
             },
-            { text = "阅读设置…", callback = function() WeReadShelf.showSettingsDialog() end,
+            { text = "阅读设置…", callback = function() RealWeidu.showSettingsDialog() end,
               separator = true },
             -- 0.4.0: weread's own menu (login, shelf, search, public accounts,
             -- cache, reading report, settings ...) folded in here
@@ -284,19 +375,19 @@ end
 -- public-account list (mode "public_account") is not a 书架 and stays.
 -- In a book, the book is closed first (the file manager re-init then shows
 -- the shelf, exactly like closing a book).
-function WeReadShelf.toRealShelf()
+function RealWeidu.toRealShelf()
     local RUI = package.loaded["apps/reader/readerui"]
     local r = RUI and RUI.instance
     if r and r.document then
         Data._paused = false
-        UIManager:nextTick(function() WeReadShelf.enter(r) end)
+        UIManager:nextTick(function() RealWeidu.enter(r) end)
         return true
     end
-    UIManager:nextTick(function() WeReadShelf.showGrid() end)
+    UIManager:nextTick(function() RealWeidu.showGrid() end)
     return true
 end
 
-function WeReadShelf.redirectWereadShelf(weread)
+function RealWeidu.redirectWereadShelf(weread)
     if type(weread) ~= "table" or weread._wrs_redirect then return false end
     if type(weread.showShelfView) ~= "function" and type(weread.showBookshelf) ~= "function" then return false end
     weread._wrs_redirect = true
@@ -308,14 +399,14 @@ function WeReadShelf.redirectWereadShelf(weread)
         end
         if old_view then pcall(UIManager.close, UIManager, old_view) end
         if self_w.shelf_view == old_view then self_w.shelf_view = nil end
-        return WeReadShelf.toRealShelf()
+        return RealWeidu.toRealShelf()
     end
     weread._wrs_orig_showBookshelf = weread.showBookshelf
     weread.showBookshelf = function(self_w)
         local cached
         pcall(function() cached = self_w.library_db and self_w.library_db:getShelf() end)
         if (type(cached) == "table" and #cached > 0) or type(self_w.refreshBookshelf) ~= "function" then
-            return WeReadShelf.toRealShelf()
+            return RealWeidu.toRealShelf()
         end
         -- nothing cached yet: weread's sync (QR login first when needed);
         -- its result goes through showShelfView -> Real微读
@@ -340,13 +431,13 @@ end
 
 -- 书架同步 / 导入 / 登录: weread's sync (and QR login when needed); the
 -- result is shown in Real微读's shelf (see redirectWereadShelf).
-function WeReadShelf.syncShelf()
+function RealWeidu.syncShelf()
     local weread = Data.find_weread()
     if not weread then
         info("未找到 weread.koplugin，请先安装或启用微信读书插件。")
         return false
     end
-    WeReadShelf.redirectWereadShelf(weread)
+    RealWeidu.redirectWereadShelf(weread)
     local fn = weread.refreshBookshelf or weread.openBookshelf
     if type(fn) ~= "function" then info("微信读书插件版本不支持书架同步。"); return false end
     local ok, err = pcall(fn, weread)
@@ -354,7 +445,7 @@ function WeReadShelf.syncShelf()
     return true
 end
 -- older name (☰ menu, tests)
-WeReadShelf.openWereadManagement = WeReadShelf.syncShelf
+RealWeidu.openWereadManagement = RealWeidu.syncShelf
 
 -- v0.3.8 流畅翻页 (default on, session only; nothing is written to KOReader's
 -- settings): no page-turn animation (readerview.lua onPageChangeAnimation) and,
@@ -362,8 +453,8 @@ WeReadShelf.openWereadManagement = WeReadShelf.syncShelf
 -- pages instead of 6 (UIManager.FULL_REFRESH_COUNT, uimanager.lua:17,741).
 -- Page turns keep KOReader's "partial" waveform (text stays crisp; "fast"/A2
 -- would ghost and look jagged on PW5).
-WeReadShelf.SMOOTH_REFRESH_COUNT = 12
-function WeReadShelf.applySmoothTurns()
+RealWeidu.SMOOTH_REFRESH_COUNT = 12
+function RealWeidu.applySmoothTurns()
     local okv, RV = pcall(require, "apps/reader/modules/readerview")
     if on("smooth_turns") then
         if okv and type(RV) == "table" and not RV._wrs_orig_anim then
@@ -374,7 +465,7 @@ function WeReadShelf.applySmoothTurns()
         local user_rate = G and G:readSetting("full_refresh_count")
         if user_rate == nil and not (G and G:isTrue("night_mode")) then
             if UIManager._wrs_orig_rate == nil then UIManager._wrs_orig_rate = UIManager.FULL_REFRESH_COUNT or false end
-            UIManager.FULL_REFRESH_COUNT = WeReadShelf.SMOOTH_REFRESH_COUNT
+            UIManager.FULL_REFRESH_COUNT = RealWeidu.SMOOTH_REFRESH_COUNT
         end
         return true
     end
@@ -389,73 +480,73 @@ function WeReadShelf.applySmoothTurns()
     return false
 end
 
-function WeReadShelf.toggleSetting(key)
+function RealWeidu.toggleSetting(key)
     S():saveSetting(key, not on(key)); S():flush()
-    if key == "smooth_turns" then pcall(WeReadShelf.applySmoothTurns) end
+    if key == "smooth_turns" then pcall(RealWeidu.applySmoothTurns) end
     if key == "reader_menu" then info("已保存，下次打开书时生效。") end
 end
 
 -- Same as KOReader's own 退出 (frontend/ui/elements/common_exit_menu_table.lua:8-19);
 -- on Kindle the launcher then returns to the native home screen.
-function WeReadShelf.exitToKindle()
+function RealWeidu.exitToKindle()
     local Event = require("ui/event")
     UIManager:broadcastEvent(Event:new("Exit"))
 end
 
-function WeReadShelf.confirmExitToKindle()
+function RealWeidu.confirmExitToKindle()
     local ConfirmBox = require("ui/widget/confirmbox")
     UIManager:show(ConfirmBox:new{
         text = "退出 KOReader，返回 Kindle 主界面？",
         ok_text = "退出",
-        ok_callback = function() WeReadShelf.exitToKindle() end,
+        ok_callback = function() RealWeidu.exitToKindle() end,
     })
 end
 
 -- 「我」 rows, as in 0.3.3 (+ 返回 KOReader, which 0.3.5 added).
-function WeReadShelf.meRows()
+function RealWeidu.meRows()
     return {
         { text = "阅读时长统计", fn = function() call_weread("showReadStats") end },   -- read_report.lua:238
         { text = "我的笔记", fn = function()
             info("weread 1.6.0 没有「全部笔记」列表接口。\n打开一本书后：阅读菜单「更多」→ 书签列表，"
                 .. "或 weread 菜单「划线和想法管理」查看该书笔记。") end },
-        { text = "书架同步", fn = function() WeReadShelf.syncShelf() end },
-        { text = "阅读设置", fn = function() WeReadShelf.showSettingsDialog() end },
-        { text = "退出到 Kindle", bold = true, fn = function() WeReadShelf.confirmExitToKindle() end },
-        { text = "返回 KOReader", fn = function() WeReadShelf.leaveToKOReader() end },
+        { text = "书架同步", fn = function() RealWeidu.syncShelf() end },
+        { text = "阅读设置", fn = function() RealWeidu.showSettingsDialog() end },
+        { text = "退出到 Kindle", bold = true, fn = function() RealWeidu.confirmExitToKindle() end },
+        { text = "返回 KOReader", fn = function() RealWeidu.leaveToKOReader() end },
     }
 end
 
 -- 「阅读设置」 dialog (0.3.3 look): switches + KOReader's full menu.
-function WeReadShelf.settingsItems()
+function RealWeidu.settingsItems()
     local function mark(k) return on(k) and "✓ " or "　" end
     return {
-        { text = mark("reader_menu") .. "Real微读阅读菜单", fn = function() WeReadShelf.toggleSetting("reader_menu") end },
+        { text = mark("reader_menu") .. "Real微读阅读菜单", fn = function() RealWeidu.toggleSetting("reader_menu") end },
         { text = mark("fast_download") .. "快速下载（3–5 章并行）", fn = function()
-            WeReadShelf.toggleSetting("fast_download")
+            RealWeidu.toggleSetting("fast_download")
             info("已保存，重启 KOReader 后生效。") end },
         { text = mark("smooth_turns") .. "流畅翻页（无动画 · 每 12 页全刷）", fn = function()
-            WeReadShelf.toggleSetting("smooth_turns") end },
-        { text = "KOReader 设置（完整菜单）", fn = function() WeReadShelf.openKOReaderMenu() end },
+            RealWeidu.toggleSetting("smooth_turns") end },
+        { text = "KOReader 设置（完整菜单）", fn = function() RealWeidu.openKOReaderMenu() end },
     }
 end
 -- 0.3.7 name kept for callers
-WeReadShelf.moreSettingsItems = WeReadShelf.settingsItems
+RealWeidu.moreSettingsItems = RealWeidu.settingsItems
 
-function WeReadShelf.showSettingsDialog()
+function RealWeidu.showSettingsDialog()
     local ButtonDialog = require("ui/widget/buttondialog")
     local dlg
     local buttons = {}
-    for _, it in ipairs(WeReadShelf.settingsItems()) do
+    for _, it in ipairs(RealWeidu.settingsItems()) do
         buttons[#buttons + 1] = { { text = it.text, callback = function() UIManager:close(dlg); it.fn() end } }
     end
     dlg = ButtonDialog:new{ title = "阅读设置", buttons = buttons }
     UIManager:show(dlg)
     return dlg
 end
-WeReadShelf.showMoreSettings = WeReadShelf.showSettingsDialog
+RealWeidu.showMoreSettings = RealWeidu.showSettingsDialog
 
 -- KOReader's own full menu, on top of the file manager (our pages close).
-function WeReadShelf.openKOReaderMenu()
+function RealWeidu.openKOReaderMenu()
     Data._paused = true
     close_pages()
     local FM = package.loaded["apps/filemanager/filemanager"]
@@ -470,23 +561,23 @@ end
 -- tap_backward, apps/reader/modules/readerrolling.lua:367-377,
 -- readerpaging.lua:106-116). KOReader's own top/bottom menu zones
 -- (readermenu.lua:100-163) are left untouched as a fallback.
-WeReadShelf.CENTER_ZONE = { ratio_x = 0.25, ratio_y = 0.25, ratio_w = 0.5, ratio_h = 0.5 }
+RealWeidu.CENTER_ZONE = { ratio_x = 0.25, ratio_y = 0.25, ratio_w = 0.5, ratio_h = 0.5 }
 
-function WeReadShelf:hookReader()
+function RealWeidu:hookReader()
     local ui = self.ui
     if not (ui and type(ui.registerTouchZones) == "function") then return end
     ui:registerTouchZones({ {
-        id = "wereadshelf_menu_tap",
+        id = "realweidu_menu_tap",
         ges = "tap",
-        screen_zone = WeReadShelf.CENTER_ZONE,
+        screen_zone = RealWeidu.CENTER_ZONE,
         overrides = { "tap_forward", "tap_backward" },
-        handler = function() return WeReadShelf.showReaderMenu(ui) end,
+        handler = function() return RealWeidu.showReaderMenu(ui) end,
     } })
 end
 
-function WeReadShelf.showReaderMenu(ui)
+function RealWeidu.showReaderMenu(ui)
     ui_icons()
-    local RM = require("wereadshelf_readermenu")
+    local RM = require("realweidu_readermenu")
     local weread = Data.find_weread()
     local menu = RM:new{
         ui = ui, weread = weread,
@@ -496,8 +587,8 @@ function WeReadShelf.showReaderMenu(ui)
             -- FM init re-opens the shelf itself when the mode is on.
             Data._paused = false
             local ok = pcall(ui.onHome, ui)
-            if ok and not WeReadShelf.shouldAutoEnter() then
-                UIManager:scheduleIn(0.3, function() WeReadShelf.showGrid() end)
+            if ok and not RealWeidu.shouldAutoEnter() then
+                UIManager:scheduleIn(0.3, function() RealWeidu.showGrid() end)
             end
         end,
     }
@@ -506,15 +597,15 @@ function WeReadShelf.showReaderMenu(ui)
 end
 
 -- Conventional launcher name.
-function WeReadShelf:launch() WeReadShelf.showGrid() end
+function RealWeidu:launch() RealWeidu.showGrid() end
 
 -- Public API -----------------------------------------------------------
 
-function WeReadShelf.get_shelf(opts)
+function RealWeidu.get_shelf(opts)
     return Data.get_shelf(Data.find_weread(), opts)
 end
 
-function WeReadShelf.open_book(book_id)
+function RealWeidu.open_book(book_id)
     return Data.open_book(Data.find_weread(), book_id)
 end
 
@@ -530,7 +621,7 @@ local function show_error(weread, err)
             ok_text = "打开微信读书",
             ok_callback = function()
                 -- weread sync (QR login first if needed, common.lua:182) -> Real微读 shelf
-                WeReadShelf.syncShelf()
+                RealWeidu.syncShelf()
             end,
         })
     else
@@ -546,14 +637,14 @@ call_weread = function(method, ...)
         return false
     end
     local ok, e = pcall(weread[method], weread, ...)
-    if not ok then logger.warn("wereadshelf:", method, e); info("打开失败：" .. tostring(e)) end
+    if not ok then logger.warn("realweidu:", method, e); info("打开失败：" .. tostring(e)) end
     return ok
 end
 
 -- Pages ------------------------------------------------------------------------
 
 ui_icons = function()
-    local U = require("wereadshelf_ui")
+    local U = require("realweidu_ui")
     U.icons_dir = (plugin_dir or ".") .. "/icons"
     return U
 end
@@ -583,13 +674,13 @@ end
 -- recommendation / ranking / category API (only /store/search, /shelf/sync,
 -- /book/info, /review/list, /readdata/detail ... in weread/lib/client.lua),
 -- so 「为你推荐」 is hidden as UI-SPEC v1.1 asks when data is unavailable.
-function WeReadShelf.showDiscover()
+function RealWeidu.showDiscover()
     local weread = Data.find_weread()
     if not weread then info(Data.MESSAGES[Data.ERR_NO_PLUGIN]); return end
     local books = Data.get_shelf(weread) or {}
     ui_icons()
     close_pages()
-    local Pages = require("wereadshelf_pages")
+    local Pages = require("realweidu_pages")
     local entries = {}
     local function add(text, method, ...)
         if type(weread[method]) == "function" then
@@ -600,18 +691,18 @@ function WeReadShelf.showDiscover()
     add("搜索书城（书名 / 作者）", "showSearch")          -- library.lua:1640
     add("公众号文章", "showMPShelfPage")                   -- library.lua:1003
     add("微信读书收藏", "showWereadCollection")            -- menu.lua:787
-    entries[#entries + 1] = { text = "刷新 / 管理书架", fn = function() WeReadShelf.syncShelf() end }
+    entries[#entries + 1] = { text = "刷新 / 管理书架", fn = function() RealWeidu.syncShelf() end }
     local page = Pages.Discover:new{
         books = books, entries = entries,
-        on_nav_discover = function() WeReadShelf.showDiscover() end,
-        on_nav_shelf = function() WeReadShelf.showGrid() end,
-        on_nav_me = function() WeReadShelf.showMe() end,
+        on_nav_discover = function() RealWeidu.showDiscover() end,
+        on_nav_shelf = function() RealWeidu.showGrid() end,
+        on_nav_me = function() RealWeidu.showMe() end,
         on_search = function() call_weread("showSearch") end,
         on_open = function(b)
             local ok, e = Data.open_book(weread, b.bookId)
             if not ok then info(Data.MESSAGES[e] or ("打开失败：" .. tostring(e))) end
         end,
-        on_all = function() WeReadShelf.showGrid() end,
+        on_all = function() RealWeidu.showGrid() end,
     }
     return show_page(page, QA_DISCOVER)
 end
@@ -620,11 +711,11 @@ end
 -- (weread client:get_read_stats("weekly"), client.lua:680 -> totalReadTime),
 -- 读完 = finished books on the cached shelf, 笔记 = readStat chip if the
 -- server sends one (read_stats.lua:189-201), else "—".
-function WeReadShelf.statsCache() return S():readSetting("stats_cache") or {} end
+function RealWeidu.statsCache() return S():readSetting("stats_cache") or {} end
 
-function WeReadShelf.refreshStats(weread, on_done, silent)
+function RealWeidu.refreshStats(weread, on_done, silent)
     if not weread or type(weread.runOnlineTask) ~= "function" or type(weread.client) ~= "table" then return false end
-    local Logic = require("wereadshelf_logic")
+    local Logic = require("realweidu_logic")
     return weread:runOnlineTask("阅读统计", function()
         local ok, raw = pcall(weread.client.get_read_stats, weread.client, "weekly")
         local good = ok and type(raw) == "table" -- BUG-04: nil / non-table is a failure too
@@ -632,40 +723,40 @@ function WeReadShelf.refreshStats(weread, on_done, silent)
             local c = { week_min = Logic.minutes(raw.totalReadTime), notes = Logic.notes_from_summary(raw), at = os.time() }
             S():saveSetting("stats_cache", c); S():flush()
         else
-            logger.warn("wereadshelf: weekly stats failed:", raw)
+            logger.warn("realweidu: weekly stats failed:", raw)
         end
         if on_done then on_done(good, not ok and raw or nil) end
     end, 0.1, { silent_offline = silent })
 end
 
-function WeReadShelf.showMe()
+function RealWeidu.showMe()
     local weread = Data.find_weread()
     if not weread then info(Data.MESSAGES[Data.ERR_NO_PLUGIN]); return end
-    local Logic = require("wereadshelf_logic")
+    local Logic = require("realweidu_logic")
     ui_icons()
     close_pages()
     local account = {}
     pcall(function() account = weread.settings:get("account", {}) or {} end)
     local books = Data.get_shelf(weread) or {}
     local function stats()
-        local c = WeReadShelf.statsCache()
+        local c = RealWeidu.statsCache()
         local hint
         if c.at then hint = "本周阅读更新于 " .. os.date("%m-%d %H:%M", c.at) .. "，点数据卡刷新"
         else hint = "点数据卡联网获取本周阅读" end
         return { week_min = c.week_min, finished = Logic.count_finished(books), notes = c.notes, hint = hint }
     end
-    local Pages = require("wereadshelf_pages")
+    local Pages = require("realweidu_pages")
     local page
     page = Pages.Me:new{
         account_name = Data.is_logged_in(weread) and (account.name or "") or "",
         stats = stats(),
         show_stats = true, -- 0.3.3 look: 数据卡 (本周阅读 / 读完 / 笔记)
-        rows = WeReadShelf.meRows(),
-        on_nav_discover = function() WeReadShelf.showDiscover() end,
-        on_nav_shelf = function() WeReadShelf.showGrid() end,
-        on_nav_me = function() WeReadShelf.showMe() end,
+        rows = RealWeidu.meRows(),
+        on_nav_discover = function() RealWeidu.showDiscover() end,
+        on_nav_shelf = function() RealWeidu.showGrid() end,
+        on_nav_me = function() RealWeidu.showMe() end,
         on_refresh_stats = function()
-            WeReadShelf.refreshStats(weread, function(good, err)
+            RealWeidu.refreshStats(weread, function(good, err)
                 if page then page.stats = stats(); page:refresh() end
                 if not good then
                     info("本周阅读刷新失败" .. (err and ("：" .. tostring(err)) or "（服务器没有返回数据）")
@@ -676,9 +767,9 @@ function WeReadShelf.showMe()
     }
     show_page(page, QA_ME)
     -- 0.3.3: refresh when online and the cache is older than 30 min (silent offline)
-    local c = WeReadShelf.statsCache()
+    local c = RealWeidu.statsCache()
     if not c.at or os.time() - c.at > 1800 then
-        WeReadShelf.refreshStats(weread, function()
+        RealWeidu.refreshStats(weread, function()
             if current_page == page then page.stats = stats(); page:refresh() end
         end, true)
     end
@@ -687,7 +778,7 @@ end
 
 -- Grid ---------------------------------------------------------------------
 
-function WeReadShelf.showSearchDialog(grid)
+function RealWeidu.showSearchDialog(grid)
     local InputDialog = require("ui/widget/inputdialog")
     local dialog
     dialog = InputDialog:new{
@@ -713,13 +804,13 @@ function WeReadShelf.showSearchDialog(grid)
     if dialog.onShowKeyboard then dialog:onShowKeyboard() end
 end
 
-function WeReadShelf.showGrid()
+function RealWeidu.showGrid()
     Data._paused = false
     local weread = Data.find_weread()
-    if weread then pcall(WeReadShelf.redirectWereadShelf, weread) end
+    if weread then pcall(RealWeidu.redirectWereadShelf, weread) end
     local books, err = Data.get_shelf(weread, { allow_empty = true }) -- BUG-06
     if not books then show_error(weread, err); return end
-    ShelfGrid = ShelfGrid or require("wereadshelf_grid")
+    ShelfGrid = ShelfGrid or require("realweidu_grid")
     local keep_page, keep_kw
     if current_grid then
         -- tapping the 书架 tab again: refresh from cache, keep position
@@ -728,7 +819,7 @@ function WeReadShelf.showGrid()
         current_grid = nil
     end
     close_pages()
-    ui_icons() -- the grid's own bottom bar uses wereadshelf_ui icons
+    ui_icons() -- the grid's own bottom bar uses realweidu_ui icons
     local grid
     grid = ShelfGrid:new{
         books = books,
@@ -741,14 +832,14 @@ function WeReadShelf.showGrid()
             local ok, e = Data.open_book(weread, book.bookId)
             if not ok then info(Data.MESSAGES[e] or ("打开失败：" .. tostring(e))) end
         end,
-        on_import = function() WeReadShelf.syncShelf() end, -- 0.3.8: sync -> back to this shelf
+        on_import = function() RealWeidu.syncShelf() end, -- 0.3.8: sync -> back to this shelf
         on_select = function()
             info("「选择」（批量管理）计划在二期提供。\n现在可点「导入」进入微信读书书架管理。")
         end,
-        on_search = function(g) WeReadShelf.showSearchDialog(g) end,
-        on_discover = function() WeReadShelf.showDiscover() end,
-        on_shelf = function() WeReadShelf.showGrid() end,
-        on_me = function() WeReadShelf.showMe() end,
+        on_search = function(g) RealWeidu.showSearchDialog(g) end,
+        on_discover = function() RealWeidu.showDiscover() end,
+        on_shelf = function() RealWeidu.showGrid() end,
+        on_me = function() RealWeidu.showMe() end,
     }
     local orig_close = grid.onCloseWidget
     grid.onCloseWidget = function(self_w)
@@ -764,7 +855,7 @@ end
 
 -- Legacy text list (v0.1) -------------------------------------------------
 
-function WeReadShelf.showShelfStatic()
+function RealWeidu.showShelfStatic()
     local weread = Data.find_weread()
     local books, err = Data.get_shelf(weread)
     if not books then show_error(weread, err); return end
@@ -775,7 +866,7 @@ function WeReadShelf.showShelfStatic()
             text = "↻ 在微信读书中刷新 / 管理书架",
             callback = function()
                 UIManager:close(menu)
-                WeReadShelf.syncShelf()
+                RealWeidu.syncShelf()
             end,
         },
     }
@@ -800,7 +891,7 @@ function WeReadShelf.showShelfStatic()
     UIManager:show(menu)
 end
 
-function WeReadShelf:showShelf() WeReadShelf.showGrid() end
+function RealWeidu:showShelf() RealWeidu.showGrid() end
 
-WeReadShelf._Layout = Layout
-return WeReadShelf
+RealWeidu._Layout = Layout
+return RealWeidu

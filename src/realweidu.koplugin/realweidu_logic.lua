@@ -1,4 +1,4 @@
--- wereadshelf_logic.lua — pure helpers (no KOReader deps) for the reader menu,
+-- realweidu_logic.lua — pure helpers (no KOReader deps) for the reader menu,
 -- font panel, discover and me pages. Unit-tested in spec/test_logic.lua.
 local M = {}
 

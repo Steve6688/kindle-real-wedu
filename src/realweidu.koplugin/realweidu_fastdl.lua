@@ -1,4 +1,4 @@
--- wereadshelf_fastdl.lua — faster full-book downloads for weread.koplugin 1.6.0,
+-- realweidu_fastdl.lua — faster full-book downloads for weread.koplugin 1.6.0,
 -- applied at runtime (no weread file is changed; removed by turning it off).
 --
 -- Where the time went (weread/lib/downloader.lua 1.6.0), per chapter, strictly

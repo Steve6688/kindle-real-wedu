@@ -1,1 +1,1 @@
-return { fullname = "wereadshelf preview harness (box only)", description = "x" }
+return { fullname = "realweidu preview harness (box only)", description = "x" }

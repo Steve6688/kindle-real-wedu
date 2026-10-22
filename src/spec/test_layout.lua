@@ -1,7 +1,7 @@
--- Unit tests for wereadshelf_layout.lua (pure Lua, no KOReader).
+-- Unit tests for realweidu_layout.lua (pure Lua, no KOReader).
 local here = arg[0]:match("^(.*)/[^/]+$") or "."
-package.path = here .. "/../wereadshelf.koplugin/?.lua;" .. package.path
-local L = require("wereadshelf_layout")
+package.path = here .. "/../realweidu.koplugin/?.lua;" .. package.path
+local L = require("realweidu_layout")
 local fails, n = 0, 0
 local function check(name, c) n = n + 1; print((c and "ok   " or "FAIL ") .. name); if not c then fails = fails + 1 end end
 

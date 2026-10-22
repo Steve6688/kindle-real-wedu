@@ -33,16 +33,16 @@ with zipfile.ZipFile('/tmp/korprev/sample.epub','w') as z:
 PY
 rm -rf /tmp/korprev/sample.sdr
 P=$K/lib/koreader/plugins
-rm -rf $P/simpleui.koplugin $P/wereadshelf.koplugin $P/zzwsprev.koplugin $P/weread.koplugin
+rm -rf $P/simpleui.koplugin $P/realweidu.koplugin $P/zzwsprev.koplugin $P/weread.koplugin
 # WSPREV_OLD_WEREAD=1: also install the separate weread.koplugin (upgrade case)
 if [ -n "$WSPREV_OLD_WEREAD" ]; then cp -r "$KW/vendor/weread.koplugin" $P/; fi
-[ -n "$WSPREV_NO_WS" ] || cp -r "$ROOT/wereadshelf.koplugin" $P/
+[ -n "$WSPREV_NO_WS" ] || cp -r "$ROOT/realweidu.koplugin" $P/
 mkdir -p $P/zzwsprev.koplugin && cp "$HERE/main.lua" "$HERE/_meta.lua" $P/zzwsprev.koplugin/
 rm -rf $K/lib/koreader/settings/simpleui
-rm -f $K/lib/koreader/settings/wereadshelf.lua # fresh install: no plugin settings at all
+rm -f $K/lib/koreader/settings/realweidu.lua; echo "return {}" > $K/lib/koreader/settings/wereadshelf.lua # fresh install: no plugin settings at all
 OUT="${WSPREV_DIR:-$KW/preview}"; mkdir -p "$OUT"; cd $K/lib/koreader
 for mode in ${WSPREV_MODES:-shelf shelf2 discover me reader font}; do
   SDL_VIDEODRIVER=dummy EMULATE_READER_W=1236 EMULATE_READER_H=1648 EMULATE_READER_DPI=300 \
-  WSPREV_WEREAD="$KW/vendor/weread.koplugin" WSPREV_MODE=$mode WSPREV_OUT="$OUT/$mode-1236x1648.png" timeout 60 ./luajit reader.lua -d $R 2>&1 | grep -aE "WSPREV040|wereadshelf:|rweread" >> "$OUT/log.txt" || true
+  WSPREV_WEREAD="$KW/vendor/weread.koplugin" WSPREV_MODE=$mode WSPREV_OUT="$OUT/$mode-1236x1648.png" timeout 60 ./luajit reader.lua -d $R 2>&1 | grep -aE "WSPREV040|realweidu:|rweread" >> "$OUT/log.txt" || true
 done
 ls -la "$OUT"

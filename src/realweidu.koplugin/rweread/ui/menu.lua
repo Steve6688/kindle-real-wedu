@@ -821,7 +821,7 @@ end
 
 function M:showAbout()
     UIManager:show(InfoMessage:new{
-        text = T(_("WeRead Plugin v%1\n\nDisclaimer: This project is for personal learning and technical research only, not for commercial use. All consequences arising from the use of this project (including but not limited to account bans, data loss, etc.) are borne by the user. The project author assumes no responsibility. Please comply with WeRead's user agreement and applicable laws and regulations.\n\nhttps://github.com/finlater/weread.koplugin"), self.version),
+        text = T(_("Real微读 v%1\n\n免责声明：本项目仅供个人学习和技术研究使用，不得用于商业用途。使用本项目所产生的一切后果（包括但不限于账号封禁、数据丢失等）由使用者自行承担。请遵守微信读书用户协议及适用法律法规。"), self.version),
     })
 end
 

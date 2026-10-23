@@ -35,12 +35,12 @@ local WeReadPlugin = WidgetContainer:extend{
     version = "1.6.0",
 }
 
--- Stable entry point used by third-party launchers such as SimpleUI and ZenUI.
+-- Compatibility entry point for launchers that discover plugin methods by name.
 function WeReadPlugin:openBookshelf()
     return self:showBookshelf()
 end
 
--- Both SimpleUI and ZenUI discover conventional plugin launch methods.
+-- Keep the conventional launch method for older KOReader integrations.
 function WeReadPlugin:launch()
     return self:openBookshelf()
 end

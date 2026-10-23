@@ -28,16 +28,16 @@
 local M = {}
 
 -- Error codes returned as 2nd value of get_shelf().
-M.ERR_NO_PLUGIN     = "no_plugin"       -- weread.koplugin not loaded/enabled
+M.ERR_NO_PLUGIN     = "no_plugin"       -- embedded WeRead core not available
 M.ERR_NOT_LOGGED_IN = "not_logged_in"   -- no api_key / no account vid
 M.ERR_NO_CACHE      = "no_cache"        -- logged in, but shelf never synced
 M.ERR_DB            = "db_unavailable"  -- library db could not be opened/read
 M.ERR_NOT_FOUND     = "not_found"       -- open_book: id not on cached shelf
 
 M.MESSAGES = {
-    no_plugin      = "未找到微信读书插件（weread.koplugin）。\n请确认它已安装并在「插件管理」中启用。",
-    not_logged_in  = "微信读书尚未登录。\n请先打开微信读书插件扫码登录。",
-    no_cache       = "还没有书架缓存。\n请先打开一次微信读书插件的书架（联网），让它同步书架。",
+    no_plugin      = "Real微读内置的微信读书模块未加载。\n请重启 KOReader；如果问题仍存在，请重新安装 Real微读。",
+    not_logged_in  = "微信读书尚未登录。\n请在 Real微读的「登录与同步书架」中扫码登录。",
+    no_cache       = "还没有书架缓存。\n请打开 Real微读并执行一次「登录与同步书架」。",
     db_unavailable = "无法读取微信读书的书架缓存数据库。",
     not_found      = "书架缓存中找不到这本书，请刷新书架后重试。",
 }

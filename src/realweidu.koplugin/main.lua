@@ -439,7 +439,7 @@ end
 function RealWeidu.syncShelf()
     local weread = Data.find_weread()
     if not weread then
-        info("未找到 weread.koplugin，请先安装或启用微信读书插件。")
+        info("Real微读内置的微信读书模块未加载，请重启 KOReader；如果问题仍存在，请重新安装 Real微读。")
         return false
     end
     RealWeidu.redirectWereadShelf(weread)

@@ -356,6 +356,31 @@ check("reader: centre zone registered", zones and zones[1].id == "realweidu_menu
 zones[1].handler()
 check("reader: 查词模式 zone registered, off -> passes through", zones[2] and zones[2].id == "realweidu_lookup_tap"
     and zones[2].handler({ pos = { x = 600, y = 800 } }) == false)
+-- 0.5.1: 查词模式 stores only English words in vocabulary builder
+do
+    local seen = {}
+    local vs = { enabled = false }
+    local gd = { vocabulary_builder = vs, realweidu_lookup_mode = true }
+    local oldG, oldDev = rawget(_G, "G_reader_settings"), package.loaded["device"]
+    _G.G_reader_settings = { readSetting = function(_, k) return gd[k] end, isTrue = function(_, k) return gd[k] == true end,
+        saveSetting = function(_, k, v) gd[k] = v end }
+    package.loaded["device"] = oldDev or { screen = { getWidth = function() return 1236 end } }
+    local cur = "serendipity"
+    rui.view = { screenToPageTransform = function(_, p) return p end }
+    rui.document.getWordFromPosition = function() return { word = cur } end
+    rui.dictionary = { onLookupWord = function(_, w) seen[#seen + 1] = { w = w, en = vs.enabled } end }
+    local W = require("device").screen:getWidth()
+    local g = { pos = { x = math.floor(W / 2), y = 800 } }
+    check("0.5.1 lookup: english word -> vocab enabled during lookup, restored", zones[2].handler(g) == true
+        and seen[1] and seen[1].w == "serendipity" and seen[1].en == true and vs.enabled == false)
+    cur = "李善德"
+    check("0.5.1 lookup: chinese word -> dictionary shown, vocab NOT enabled", zones[2].handler(g) == true
+        and seen[2] and seen[2].w == "李善德" and seen[2].en == false and vs.enabled == false)
+    vs.enabled = true
+    check("0.5.1 lookup: chinese word with vocab globally on -> suppressed then restored", zones[2].handler(g) == true
+        and seen[3].en == false and vs.enabled == true)
+    _G.G_reader_settings = oldG; package.loaded["device"] = oldDev; rui.view = nil; rui.dictionary = nil; rui.document.getWordFromPosition = nil
+end
 check("reader: tap shows WeRead menu", getmetatable(shown[#shown]).__index == RMcls and shown[#shown].ui == rui)
 S:saveSetting("reader_menu", false); zones = nil
 P:new{ ui = rui, path = "/x" }:init()

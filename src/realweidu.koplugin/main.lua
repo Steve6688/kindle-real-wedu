@@ -156,7 +156,7 @@ local function S() return RealWeidu._settings_override or settings() end
 local function on(key) return S():readSetting(key) ~= false end
 RealWeidu.isOn = on
 RealWeidu.ENTER_TEXT = "进入 Real微读"
-RealWeidu.VERSION = "0.5.0"
+RealWeidu.VERSION = "0.5.1"
 
 -- Put 「进入 Real微读」 at the top of KOReader's ☰ (main) menu tab instead of
 -- after Exit (items missing from the order table are appended at the end).
@@ -633,13 +633,16 @@ function RealWeidu.lookupTap(ui, ges)
     -- lookups while vocabulary_builder.enabled is true, so enable it just for this lookup.
     local G = rawget(_G, "G_reader_settings")
     local vs = G and G:readSetting("vocabulary_builder")
-    local restore = false
-    if type(vs) == "table" and not vs.enabled then vs.enabled = true; restore = true end
+    local restore, prev = false, nil
+    local english = Logic.is_english_word(text) -- 0.5.1: non-Latin selections never stored
+    if type(vs) == "table" and (vs.enabled and true or false) ~= english then
+        prev = vs.enabled; vs.enabled = english; restore = true
+    end
     local boxes = word.sbox and { word.sbox } or nil
     local ok, err = pcall(ui.dictionary.onLookupWord, ui.dictionary, text, false, boxes)
-    if restore then vs.enabled = false end
+    if restore then vs.enabled = prev end
     if not ok then logger.warn("realweidu: lookup", err) end
-    if type(vs) ~= "table" and ui.vocabbuilder then
+    if english and type(vs) ~= "table" and ui.vocabbuilder then
         pcall(ui.handleEvent, ui, require("ui/event"):new("WordLookedUp", text,
             ui.doc_props and ui.doc_props.display_title or "", true))
     end

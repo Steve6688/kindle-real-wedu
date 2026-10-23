@@ -146,7 +146,21 @@ do
     check("reader registers lookup tap zone overriding page turn", msrc:find('id = "realweidu_lookup_tap"', 1, true) and msrc:find('"tap_forward", "tap_backward"', 1, true))
     check("lookup handler uses zone helper + dictionary", msrc:find("Logic.lookup_tap_action(RealWeidu.lookupModeOn()", 1, true) and msrc:find("ui.dictionary.onLookupWord", 1, true))
     check("no word -> falls through", msrc:find("no word: page turn / menu", 1, true) ~= nil)
-    check("auto-add: vocabbuilder enabled only during lookup", msrc:find("vs.enabled = true; restore = true", 1, true) and msrc:find("if restore then vs.enabled = false end", 1, true))
+    check("auto-add: vocabbuilder enabled only during lookup", msrc:find("vs.enabled = english; restore = true", 1, true) and msrc:find("if restore then vs.enabled = prev end", 1, true))
     check("bottom bar still unchanged", src:find('{ icon = "rm_brightness", fn = "showClassicBrightness" },', 1, true) ~= nil)
+end
+-- 0.5.1: 查词模式 only stores English words in the vocabulary builder
+do
+    local W = L.is_english_word
+    check("english words accepted", W("serendipity") and W("Hello") and W("  word\n") and W("don't") and W("don\226\128\153t") and W("well-known") and W("o'clock"))
+    check("chinese rejected", not W("李善德") and not W("和尚") and not W("佛"))
+    check("mixed / non-Latin rejected", not W("hello世界") and not W("café") and not W("Привет") and not W("こんにちは") and not W("123") and not W("x2"))
+    check("empty / punctuation / bad input rejected", not W("") and not W("   ") and not W("'") and not W("--") and not W(nil) and not W(42) and not W("two words"))
+    local f = io.open(here .. "/../realweidu.koplugin/main.lua"); local msrc = f:read("*a"); f:close()
+    check("lookup gates vocab on is_english_word", msrc:find("local english = Logic.is_english_word(text)", 1, true) ~= nil)
+    check("vocab enabled flag forced to english-ness and restored", msrc:find("vs.enabled = english; restore = true", 1, true) and msrc:find("if restore then vs.enabled = prev end", 1, true))
+    check("fallback WordLookedUp only for english", msrc:find('if english and type(vs) ~= "table" and ui.vocabbuilder then', 1, true) ~= nil)
+    local meta = io.open(here .. "/../realweidu.koplugin/_meta.lua"):read("*a")
+    check("version 0.5.1", meta:find('"0.5.1"', 1, true) and msrc:find('RealWeidu.VERSION = "0.5.1"', 1, true))
 end
 print(string.format("\n%d checks, %d failed", n, fails)); os.exit(fails == 0 and 0 or 1)

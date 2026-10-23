@@ -335,6 +335,16 @@ function M.lookup_tap_action(on, x, w, edge)
     return "lookup"
 end
 
+-- 0.5.1: only English words (Latin letters, inner/outer apostrophe or hyphen) go to the
+-- vocabulary builder in 查词模式; Chinese / other non-Latin selections are not stored.
+function M.is_english_word(s)
+    if type(s) ~= "string" then return false end
+    s = s:gsub("\226\128\153", "'"):gsub("\226\128\152", "'"):match("^%s*(.-)%s*$")
+    if s == "" or #s > 64 then return false end
+    if not s:match("^[A-Za-z'%-]+$") then return false end
+    return s:find("[A-Za-z]") ~= nil
+end
+
 -- Compact form for inside the circle: "—" | "<1分" | "N分" | "N时" (rounded hours >= 60 min)
 function M.fmt_short(secs)
     if type(secs) ~= "number" or secs ~= secs or secs < 0 then return M.UNKNOWN end

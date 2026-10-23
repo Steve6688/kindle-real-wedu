@@ -1,11 +1,11 @@
--- Unit tests for wereadshelf_layout.lua (pure Lua, no KOReader).
+-- Unit tests for realweidu_layout.lua (pure Lua, no KOReader).
 local here = arg[0]:match("^(.*)/[^/]+$") or "."
-package.path = here .. "/../wereadshelf.koplugin/?.lua;" .. package.path
-local L = require("wereadshelf_layout")
+package.path = here .. "/../realweidu.koplugin/?.lua;" .. package.path
+local L = require("realweidu_layout")
 local fails, n = 0, 0
 local function check(name, c) n = n + 1; print((c and "ok   " or "FAIL ") .. name); if not c then fails = fails + 1 end end
 
--- PW5 with a typical SimpleUI top inset + bar (content ~1380 px)
+-- PW5 content height as in 0.3.3 (top inset + bar, ~1380 px)
 local m = L.compute{ screen_w = 1236, avail_h = 1380 }
 check("4 columns", m.cols == 4)
 check("cover width 252 (1236-2*45-3*45)/4", m.cover_w == 252)
@@ -17,7 +17,10 @@ check("cell taller than 120", m.cell_h >= 120 and m.cell_w >= 120)
 check("header = 24+120+120", m.header_h == 264)
 check("rows fit grid height", m.rows * m.cell_h + (m.rows - 1) * m.row_gap <= m.grid_h)
 check("PW5 rows = 2, per_page = 8", m.rows == 2 and m.per_page == 8)
--- full screen without SimpleUI: (1648-264+30)/(472+30) = 2.8 -> still 2 rows
+-- 0.3.8 own status line (82) + bar (226): 1648-82-226 = 1340
+local o = L.compute{ screen_w = 1236, avail_h = 1648 - 82 - 226 }
+check("0.3.8 own bars: 2 rows x 4 = 8 per page (0.3.3 look)", o.rows == 2 and o.per_page == 8)
+-- full screen without any bar: (1648-264+30)/(472+30) = 2.8 -> still 2 rows
 local f = L.compute{ screen_w = 1236, avail_h = 1648 }
 check("no bar: 2 rows (whole rows only)", f.rows == 2 and f.per_page == 8)
 check("taller screen -> 3 rows", L.compute{ screen_w = 1236, avail_h = 1800 }.rows == 3)

@@ -1,11 +1,11 @@
--- Offline tests for wereadshelf_data.lua. Run: luajit spec/test_shelf_data.lua
+-- Offline tests for realweidu_data.lua. Run: luajit spec/test_shelf_data.lua
 -- Uses the REAL weread v1.6.0 LibraryDB / BookStore / CoverCache / Crypto code
 -- to write the mock cache, so the data layer is checked against weread's
 -- actual on-disk format, not a guess.
 local here = arg[0]:match("^(.*)/[^/]+$") or "."
 local deps = here .. "/.deps"
 package.path = table.concat({
-    here .. "/../wereadshelf.koplugin/?.lua",
+    here .. "/../realweidu.koplugin/?.lua",
     deps .. "/weread/?.lua",
     deps .. "/kb/?.lua",
     deps .. "/kb/thirdparty/?.lua",
@@ -38,7 +38,7 @@ local LibraryDB  = require("weread.lib.library_db")
 local BookStore  = require("weread.lib.book_store")
 local CoverCache = require("weread.lib.cover_cache")
 local Crypto     = require("weread.lib.crypto")
-local Data       = require("wereadshelf_data")
+local Data       = require("realweidu_data")
 
 local pass, fail = 0, 0
 local function check(name, cond, extra)

@@ -139,6 +139,8 @@ local function proc()
     return M.proc
 end
 
+M.get_proc = proc -- 0.6.1: shared with realweidu_stream
+
 -- Worker: weread's own chapter fetch (reader page + shards, unchanged request
 -- pattern) and CSS. The annotation-source cache write (one SQLite db per book)
 -- is done later in the main process, so parallel workers never contend for it.

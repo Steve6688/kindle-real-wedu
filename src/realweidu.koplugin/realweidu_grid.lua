@@ -182,6 +182,21 @@ end
 
 function ShelfGrid:_buildCell(book)
     local L = self.L
+    -- 0.6.1 边下边读: one-line title + a progress line in the same box height
+    local okS, Stream = pcall(require, "realweidu_stream")
+    local label = okS and book.bookId and Stream.shelf_label(book.bookId) or nil
+    if label then
+        return VerticalGroup:new{ align = "left",
+            self:_buildCover(book),
+            VerticalSpan:new{ width = L.name_gap },
+            TextBoxWidget:new{ text = book.title or "", face = face(L.name_font), bold = true,
+                width = L.cover_w, height = L.name_line_h, height_overflow_show_ellipsis = true,
+                fgcolor = BLACK, alignment = "left" },
+            TextBoxWidget:new{ text = label, face = face(math.floor(L.name_font * 0.85)),
+                width = L.cover_w, height = L.name_h - L.name_line_h, height_overflow_show_ellipsis = true,
+                fgcolor = BLACK, alignment = "left" },
+        }
+    end
     return VerticalGroup:new{ align = "left",
         self:_buildCover(book),
         VerticalSpan:new{ width = L.name_gap },

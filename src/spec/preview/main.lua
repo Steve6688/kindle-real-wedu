@@ -37,8 +37,65 @@ local function shot()
     UIManager:scheduleIn(1, function() UIManager:quit() end)
 end
 
+local function stream_reader_steps(ui)
+    -- 0.6.1 边下边读 screens: reading while downloading, a placeholder chapter, swap-in
+    local S = require("realweidu_stream")
+    local out = os.getenv("WSPREV_DIR") or "/tmp/korprev"
+    local step = _G.__wsprev_stream_step or 0
+    _G.__wsprev_stream_step = step + 1
+    local function log(...) io.stderr:write("WSPREV stream " .. table.concat({ ... }, " ") .. "\n") end
+    if step == 0 then
+        UIManager:scheduleIn(3, function()
+            local job = next(S.jobs) and select(2, next(S.jobs))
+            log("reading", "done=" .. (job and S.count_done(job) or -1), "total=" .. (job and job.total or -1))
+            Screen:shot(out .. "/reading-while-downloading.png")
+            local xp = "/body/DocFragment[18]"
+            ui:handleEvent(require("ui/event"):new("GotoXPointer", xp, xp))
+            UIManager:scheduleIn(0.8, function()
+                Screen:shot(out .. "/placeholder-toast.png")
+                UIManager:scheduleIn(1.0, function()
+                    Screen:shot(out .. "/placeholder.png")
+                    log("placeholder", "priority=" .. tostring(job and job.priority), "chapter=" .. tostring(S.current_chapter(ui)))
+                end)
+            end)
+        end)
+    else
+        UIManager:scheduleIn(3, function()
+            log("swapped", "chapter=" .. tostring(S.current_chapter(ui)))
+            Screen:shot(out .. "/swapped-in.png")
+            UIManager:scheduleIn(1, function() UIManager:quit() end)
+        end)
+    end
+end
+
 function H:init()
+    if self.ui.document and MODE == "streamread" then return stream_reader_steps(self.ui) end
     if _G.__wsprev_done then return end
+    if MODE == "streamread" then
+        _G.__wsprev_done = true
+        UIManager:scheduleIn(2, function()
+            local S = require("realweidu_stream")
+            local Client = require("rweread.lib.client")
+            local store = {}
+            os.execute("rm -rf /tmp/korprev/stream; mkdir -p /tmp/korprev/stream")
+            for k in pairs(S.jobs) do S.stop(S.jobs[k]) end
+            G_reader_settings:delSetting(S.SETTING)
+            local settings = { mock_endpoint = "http://127.0.0.1:18084", cache_dir = "/tmp/korprev/stream",
+                download_dir = "/tmp/korprev/stream",
+                get = function(_, k, d) return store[k] or d end, set = function(_, k, v) store[k] = v end, flush = function() end,
+                merge_set_cookie = function() end, is_cookie_configured = function() return true end }
+            local chapters = {}
+            for c = 1, 20 do chapters[c] = { chapterUid = c, chapterIdx = c, title = "第" .. c .. "章" } end
+            local t0 = require("socket").gettime()
+            S.on_first_read = function(j) io.stderr:write(string.format("WSPREV stream first_read=%.2fs\n", j.first_read)) end
+            io.stderr:write("WSPREV stream start\n")
+            local okst, est = pcall(S.start, { settings = settings, client = Client:new(settings),
+                open_file = function(p) require("apps/reader/readerui"):showReader(p) end },
+                { book_id = "3300000001", bookId = "3300000001", title = "长安的荔枝", author = "马伯庸" }, chapters, {})
+            io.stderr:write("WSPREV stream started " .. tostring(okst) .. " " .. tostring(est) .. "\n")
+        end)
+        return
+    end
     if self.ui.document then
         if MODE == "pageturn" then
             _G.__wsprev_done = true
@@ -375,6 +432,13 @@ function H:init()
         elseif MODE == "discover" then P.showDiscover()
         elseif MODE == "me" then P.showMe()
         else
+            if MODE == "streamshelf" then -- 0.6.1: shelf progress label
+                local S = require("realweidu_stream")
+                local d = {}
+                for i = 1, 37 do d[i] = true end
+                S.jobs["1003"] = { book_id = "1003", total = 120, done = d, running = true }
+                G_reader_settings:saveSetting(S.SETTING, { ["1006"] = { done = 52, total = 88, dir = "/nonexistent" } })
+            end
             local g = P.showGrid()
             if MODE == "shelf2" and g then g:onGotoPage(2) end
         end

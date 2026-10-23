@@ -33,6 +33,7 @@ end
 local okw, WeReadPlugin = pcall(require, "rweread.plugin")
 if not okw then logger.warn("realweidu: embedded weread failed to load:", WeReadPlugin); WeReadPlugin = nil end
 local FastDL = require("realweidu_fastdl")
+local Stream = require("realweidu_stream") -- 0.6.1 边下边读
 local Layout = require("realweidu_layout")
 local ShelfGrid -- lazy (pulls in UI widgets)
 
@@ -156,7 +157,7 @@ local function S() return RealWeidu._settings_override or settings() end
 local function on(key) return S():readSetting(key) ~= false end
 RealWeidu.isOn = on
 RealWeidu.ENTER_TEXT = "进入 Real微读"
-RealWeidu.VERSION = "0.6.0"
+RealWeidu.VERSION = "0.6.1"
 
 -- Put 「进入 Real微读」 at the top of KOReader's ☰ (main) menu tab instead of
 -- after Exit (items missing from the order table are appended at the end).
@@ -267,6 +268,31 @@ function RealWeidu:init()
             logger.info("realweidu: fast download installed", "decrypt=", tostring(FastDL.speedups.decrypt),
                 "gzip=", tostring(FastDL.speedups.gzip), "md5=", tostring(FastDL.Decrypt.md5_name))
         end
+        -- 0.6.1 边下边读: full-book downloads open after the first chapters
+        local oks, es = pcall(Stream.install)
+        if not oks then logger.warn("realweidu: stream download not installed:", es) end
+        if self.ui and self.ui.document then pcall(Stream.on_reader_open, self.ui) end
+        Stream.on_change = function() -- shelf progress label, at most every 10 s
+            local g = current_grid
+            if not (g and g._refresh) or (UIManager._window_stack and #UIManager._window_stack > 0
+                and UIManager._window_stack[#UIManager._window_stack].widget ~= g) then return end
+            local t = os.time()
+            if RealWeidu._stream_shelf_t and t - RealWeidu._stream_shelf_t < 10 then return end
+            RealWeidu._stream_shelf_t = t
+            pcall(g._refresh, g)
+        end
+        if not RealWeidu._stream_resumed and UIManager.scheduleIn then
+            RealWeidu._stream_resumed = true -- once per KOReader session
+            UIManager:scheduleIn(3, function() pcall(Stream.resume_all) end)
+        end
+    end
+end
+
+-- 0.6.1: a book downloading in the background follows the reader's chapter.
+function RealWeidu:onPageUpdate()
+    if self.ui and self.ui.document and (next(Stream.jobs) ~= nil or next(Stream.finished) ~= nil) then
+        local ok, e = pcall(Stream.on_page, self.ui)
+        if not ok then logger.warn("realweidu: stream page", e) end
     end
 end
 

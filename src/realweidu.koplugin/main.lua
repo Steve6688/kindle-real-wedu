@@ -16,6 +16,7 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local InfoMessage     = require("ui/widget/infomessage")
 local Menu            = require("ui/widget/menu")
 local logger          = require("logger")
+local Logic           = require("realweidu_logic")
 
 -- Must be required at top level: KOReader only puts the plugin dir on
 -- package.path while dofile()'ing main.lua (frontend/pluginloader.lua:242-244).
@@ -155,7 +156,7 @@ local function S() return RealWeidu._settings_override or settings() end
 local function on(key) return S():readSetting(key) ~= false end
 RealWeidu.isOn = on
 RealWeidu.ENTER_TEXT = "进入 Real微读"
-RealWeidu.VERSION = "0.4.9"
+RealWeidu.VERSION = "0.5.0"
 
 -- Put 「进入 Real微读」 at the top of KOReader's ☰ (main) menu tab instead of
 -- after Exit (items missing from the order table are appended at the end).
@@ -590,7 +591,59 @@ function RealWeidu:hookReader()
         screen_zone = RealWeidu.CENTER_ZONE,
         overrides = { "tap_forward", "tap_backward" },
         handler = function() return RealWeidu.showReaderMenu(ui) end,
+    },
+    -- 0.5.0 查词模式: when on, a single tap on a word looks it up (and adds it to the
+    -- vocabulary builder); taps in the left/right edge strips, or on no word, fall through
+    -- to page turning / the menu zone. When off the handler returns false immediately.
+    {
+        id = "realweidu_lookup_tap",
+        ges = "tap",
+        screen_zone = { ratio_x = 0, ratio_y = 0, ratio_w = 1, ratio_h = 1 },
+        overrides = { "realweidu_menu_tap", "tap_forward", "tap_backward", "readermenu_tap", "readerconfigmenu_tap" },
+        handler = function(ges) return RealWeidu.lookupTap(ui, ges) end,
     } })
+end
+
+function RealWeidu.lookupModeOn()
+    local G = rawget(_G, "G_reader_settings")
+    return G and G:isTrue(Logic.LOOKUP_SETTING) or false
+end
+
+function RealWeidu.setLookupMode(on)
+    local G = rawget(_G, "G_reader_settings")
+    if not G then return end
+    G:saveSetting(Logic.LOOKUP_SETTING, on and true or false)
+    if G.flush then pcall(G.flush, G) end
+end
+
+function RealWeidu.lookupTap(ui, ges)
+    local pos = ges and ges.pos
+    if not pos or not RealWeidu.lookupModeOn() then return false end
+    local W = require("device").screen:getWidth()
+    if Logic.lookup_tap_action(RealWeidu.lookupModeOn(), pos.x, W) ~= "lookup" then return false end
+    local word
+    pcall(function()
+        local hp = ui.view:screenToPageTransform(pos)
+        if hp then word = ui.document:getWordFromPosition(hp) end
+    end)
+    local text = word and word.word
+    if type(text) ~= "string" or not text:match("%S") then return false end -- no word: page turn / menu
+    if not ui.dictionary then return false end
+    -- auto-add to KOReader's vocabbuilder: its WordLookedUp handler only records non-manual
+    -- lookups while vocabulary_builder.enabled is true, so enable it just for this lookup.
+    local G = rawget(_G, "G_reader_settings")
+    local vs = G and G:readSetting("vocabulary_builder")
+    local restore = false
+    if type(vs) == "table" and not vs.enabled then vs.enabled = true; restore = true end
+    local boxes = word.sbox and { word.sbox } or nil
+    local ok, err = pcall(ui.dictionary.onLookupWord, ui.dictionary, text, false, boxes)
+    if restore then vs.enabled = false end
+    if not ok then logger.warn("realweidu: lookup", err) end
+    if type(vs) ~= "table" and ui.vocabbuilder then
+        pcall(ui.handleEvent, ui, require("ui/event"):new("WordLookedUp", text,
+            ui.doc_props and ui.doc_props.display_title or "", true))
+    end
+    return true
 end
 
 function RealWeidu.showReaderMenu(ui)

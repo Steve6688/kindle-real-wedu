@@ -24,6 +24,8 @@ PY
 python3 - <<'PY'
 import zipfile
 body=''.join('<p>%s</p>'%t for t in ["时，一个灰袍和尚进了院子，笑嘻嘻地先合掌诵声佛号，然后从袖子里取出两份香积钱契，口称功德。"*2,"李善德伸手接过，只觉得两撇胡须抖了一抖。"*3]*8)
+import os
+if os.environ.get("WSPREV_ENGLISH"): body='<p>It was pure serendipity that the old monk walked into the courtyard, smiling, and handed over two receipts for the temple fund.</p>'*12
 with zipfile.ZipFile('/tmp/korprev/sample.epub','w') as z:
     z.writestr('mimetype','application/epub+zip',compress_type=zipfile.ZIP_STORED)
     z.writestr('META-INF/container.xml','<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/c.opf" media-type="application/oebps-package+xml"/></rootfiles></container>')

@@ -115,4 +115,38 @@ do
     check("open resets to current chapter page", src:find("self.toc_page = nil %-%- reopen on the current chapter's page") ~= nil)
     check("right blank strip still closes", src:find("tap outside dismisses TOC", 1, true) ~= nil)
 end
+-- 0.5.0: 生词本 entry in ⋯ menu, other buttons unchanged
+do
+    local more = src:match("function RM:showMore%(%)(.-)\nend\n") or ""
+    check("⋯ menu has 生词本", more:find('item("生词本", function() self:openVocabBuilder() end)', 1, true) ~= nil)
+    local n_items = select(2, more:gsub("\n%s+item%(", ""))
+    local others = true
+    for _, t in ipairs({ "书签列表", "下载并匹配划线/想法", "搜索全书", "书籍详情", "刷新屏幕", "KOReader 原生菜单", "添加书签" }) do
+        if not more:find(t, 1, true) then others = false end
+    end
+    check("⋯ menu keeps the other 7 items (+生词本 +查词模式 = 9)", n_items == 9 and others)
+    check("opens KOReader vocabbuilder", src:find('send(self.ui, "ShowVocabBuilder")', 1, true) ~= nil and src:find("self.ui.vocabbuilder", 1, true) ~= nil)
+    check("graceful when plugin disabled", src:find("生词本插件未启用", 1, true) ~= nil)
+    check("bottom bar unchanged", src:find('{ icon = "rm_brightness", fn = "showClassicBrightness" },\n    { icon = "rm_font",       fn = "toggleFont" },', 1, true) ~= nil)
+end
+-- 0.5.0: 查词模式
+do
+    local E = L.LOOKUP_EDGE
+    check("edge strip default 12%", E == 0.12)
+    check("off -> always pass (tap-to-turn unchanged)", L.lookup_tap_action(false, 618, 1236) == "pass" and L.lookup_tap_action(nil, 618, 1236) == "pass")
+    check("on, centre -> lookup", L.lookup_tap_action(true, 618, 1236) == "lookup")
+    check("on, left strip -> pass", L.lookup_tap_action(true, 0, 1236) == "pass" and L.lookup_tap_action(true, 147, 1236) == "pass")
+    check("on, right strip -> pass", L.lookup_tap_action(true, 1235, 1236) == "pass" and L.lookup_tap_action(true, 1236 - 148, 1236) == "pass")
+    check("on, just inside strips -> lookup", L.lookup_tap_action(true, 148, 1236) == "lookup" and L.lookup_tap_action(true, 1236 - 149, 1236) == "lookup")
+    check("bad input -> pass", L.lookup_tap_action(true, nil, 1236) == "pass" and L.lookup_tap_action(true, 5, 0) == "pass")
+    local more = src:match("function RM:showMore%(%)(.-)\nend\n") or ""
+    check("⋯ menu has 查词模式 toggle", more:find("查词模式：开", 1, true) and more:find("查词模式：关", 1, true) and more:find("self:toggleLookupMode()", 1, true))
+    check("toggle persists in G_reader_settings", src:find("G:saveSetting(Logic.LOOKUP_SETTING, on)", 1, true) ~= nil and L.LOOKUP_SETTING == "realweidu_lookup_mode")
+    local f = io.open(here .. "/../realweidu.koplugin/main.lua"); local msrc = f:read("*a"); f:close()
+    check("reader registers lookup tap zone overriding page turn", msrc:find('id = "realweidu_lookup_tap"', 1, true) and msrc:find('"tap_forward", "tap_backward"', 1, true))
+    check("lookup handler uses zone helper + dictionary", msrc:find("Logic.lookup_tap_action(RealWeidu.lookupModeOn()", 1, true) and msrc:find("ui.dictionary.onLookupWord", 1, true))
+    check("no word -> falls through", msrc:find("no word: page turn / menu", 1, true) ~= nil)
+    check("auto-add: vocabbuilder enabled only during lookup", msrc:find("vs.enabled = true; restore = true", 1, true) and msrc:find("if restore then vs.enabled = false end", 1, true))
+    check("bottom bar still unchanged", src:find('{ icon = "rm_brightness", fn = "showClassicBrightness" },', 1, true) ~= nil)
+end
 print(string.format("\n%d checks, %d failed", n, fails)); os.exit(fails == 0 and 0 or 1)

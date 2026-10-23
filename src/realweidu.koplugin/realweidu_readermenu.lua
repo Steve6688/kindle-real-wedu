@@ -1073,6 +1073,38 @@ function RM:setFont(face)
     self:refresh("ui")
 end
 
+-- 0.5.0 查词模式 toggle (persisted in G_reader_settings[Logic.LOOKUP_SETTING])
+function RM:lookupModeOn()
+    local G = rawget(_G, "G_reader_settings")
+    return G and G:isTrue(Logic.LOOKUP_SETTING) or false
+end
+function RM:toggleLookupMode()
+    local G = rawget(_G, "G_reader_settings")
+    if not G then return end
+    local on = not self:lookupModeOn()
+    G:saveSetting(Logic.LOOKUP_SETTING, on)
+    if G.flush then pcall(G.flush, G) end
+    self:close()
+    UIManager:show(require("ui/widget/infomessage"):new{ timeout = 2,
+        text = on and "查词模式已开启：点单词即查词并加入生词本；点屏幕左右边缘翻页。"
+            or "查词模式已关闭：点屏幕翻页。" })
+end
+
+-- 0.5.0: open KOReader's built-in Vocabulary builder (plugins/vocabbuilder.koplugin,
+-- VocabBuilder:onShowVocabBuilder). Read-only use of KOReader; nothing of it is modified.
+function RM:openVocabBuilder()
+    self:close()
+    -- ReaderUI registers plugins by folder name -> ui.vocabbuilder. Its on* handlers are wrapped
+    -- by PluginLoader's HandlerSandbox (callable tables), so dispatch KOReader's own event.
+    local vb = self.ui and (self.ui.vocabbuilder or self.ui.vocabulary_builder)
+    if vb then
+        send(self.ui, "ShowVocabBuilder")
+    else
+        UIManager:show(require("ui/widget/infomessage"):new{
+            text = "生词本插件未启用：KOReader 菜单 → 工具 → 插件管理 → 启用「Vocabulary builder」后重启。" })
+    end
+end
+
 function RM:showMore()
     local dlg
     local marked = false
@@ -1086,6 +1118,8 @@ function RM:showMore()
             item("书签列表", function() self:close(); send(self.ui, "ShowBookmark") end),
             item("下载并匹配划线/想法", function() self:syncThoughts() end),
             item("搜索全书", function() self:close(); send(self.ui, "ShowFulltextSearchInput") end),
+            item("生词本", function() self:openVocabBuilder() end), -- 0.5.0: KOReader vocabbuilder
+            item(self:lookupModeOn() and "查词模式：开 ✓" or "查词模式：关", function() self:toggleLookupMode() end),
             item("书籍详情", function()
                 self:close()
                 -- weread/ui/library.lua:1768 for WeRead books; KOReader book info otherwise

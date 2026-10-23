@@ -324,6 +324,17 @@ function M.toc_swipe_delta(direction)
     return 0
 end
 
+-- 0.5.0 查词模式 ----------------------------------------------------------------
+M.LOOKUP_SETTING = "realweidu_lookup_mode"  -- G_reader_settings key (persisted)
+M.LOOKUP_EDGE = 0.12                        -- left/right strips that still turn pages
+-- "lookup" when the tap should look up a word, "pass" to leave it to page turn / menu.
+function M.lookup_tap_action(on, x, w, edge)
+    if not on or type(x) ~= "number" or type(w) ~= "number" or w <= 0 then return "pass" end
+    local e = math.floor(w * (edge or M.LOOKUP_EDGE))
+    if x < e or x >= w - e then return "pass" end
+    return "lookup"
+end
+
 -- Compact form for inside the circle: "—" | "<1分" | "N分" | "N时" (rounded hours >= 60 min)
 function M.fmt_short(secs)
     if type(secs) ~= "number" or secs ~= secs or secs < 0 then return M.UNKNOWN end

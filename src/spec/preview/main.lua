@@ -69,7 +69,7 @@ function H:init()
             end)
             return
         end
-        if MODE ~= "reader" and MODE ~= "font" and MODE ~= "sheet" and MODE ~= "progress" and MODE ~= "toc" and MODE ~= "toc2" then return end
+        if MODE ~= "reader" and MODE ~= "font" and MODE ~= "sheet" and MODE ~= "progress" and MODE ~= "toc" and MODE ~= "toc2" and MODE ~= "dict" and MODE ~= "vocab" and MODE ~= "lookmenu" and MODE ~= "looktap" then return end
         _G.__wsprev_done = true
         UIManager:scheduleIn(4, function()
             local P = self.ui.realweidu
@@ -85,6 +85,47 @@ function H:init()
             end
             if MODE == "sheet" and top.toggleFont then top:toggleFont() end
             if MODE == "progress" and top.toggleProgressCard then top:toggleProgressCard() end -- 0.4.5
+            if MODE == "lookmenu" or MODE == "looktap" then -- 0.5.0: 查词模式
+                G_reader_settings:saveSetting("realweidu_lookup_mode", MODE == "looktap")
+                if MODE == "lookmenu" then
+                    top:toggleLookupMode() -- off -> on, via the menu item itself
+                    P.showReaderMenu(self.ui)
+                    for i = #UIManager._window_stack, 1, -1 do
+                        local w = UIManager._window_stack[i].widget
+                        if w.name == "realweidu_readermenu" then top = w end
+                    end
+                    for i = #UIManager._window_stack, 1, -1 do
+                        local w = UIManager._window_stack[i] and UIManager._window_stack[i].widget
+                        if w and w.text and w.name ~= "realweidu_readermenu" then UIManager:close(w) end
+                    end
+                    top:showMore()
+                    logger.info("WSPREV lookup mode", tostring(G_reader_settings:isTrue("realweidu_lookup_mode")))
+                else
+                    UIManager:close(top)
+                    local Geom = require("ui/geometry")
+                    local x, y = tonumber(os.getenv("WSPREV_TX") or 520), tonumber(os.getenv("WSPREV_TY") or 700)
+                    local edge = P.lookupTap(self.ui, { ges = "tap", pos = Geom:new{ x = 30, y = y, w = 0, h = 0 } })
+                    local hit = P.lookupTap(self.ui, { ges = "tap", pos = Geom:new{ x = x, y = y, w = 0, h = 0 } })
+                    local vs = G_reader_settings:readSetting("vocabulary_builder")
+                    logger.info("WSPREV looktap edge->", tostring(edge), "word->", tostring(hit),
+                        "vocab enabled after", tostring(vs and vs.enabled))
+                end
+                UIManager:scheduleIn(4, shot)
+                return
+            end
+            if MODE == "dict" or MODE == "vocab" then -- 0.5.0: ECDICT lookup / 生词本
+                UIManager:close(top)
+                for _, w in ipairs({ "serendipity", "abandon", "ran", "apple" }) do
+                    self.ui:handleEvent(require("ui/event"):new("WordLookedUp", w, "长安的荔枝", true))
+                end
+                if MODE == "dict" then
+                    self.ui.dictionary:onLookupWord("serendipity")
+                else
+                    top:openVocabBuilder()
+                end
+                UIManager:scheduleIn(4, shot)
+                return
+            end
             if (MODE == "toc" or MODE == "toc2") and top.showTocSheet then -- 0.4.8/0.4.9
                 if os.getenv("WSPREV_LONGTOC") then -- box only: fake 100-chapter TOC
                     local t = {}; for k = 1, 100 do t[k] = { title = "第" .. k .. "章 荔枝使者", page = k, depth = 1 } end
@@ -123,7 +164,7 @@ function H:init()
         end)
         return
     end
-    if MODE == "reader" or MODE == "font" or MODE == "sheet" or MODE == "pageturn" or MODE == "progress" or MODE == "toc" or MODE == "toc2" then
+    if MODE == "reader" or MODE == "font" or MODE == "sheet" or MODE == "pageturn" or MODE == "progress" or MODE == "toc" or MODE == "toc2" or MODE == "dict" or MODE == "vocab" or MODE == "lookmenu" or MODE == "looktap" then
         _G.__wsprev_reader = true
         UIManager:scheduleIn(1, function()
             require("apps/reader/readerui"):showReader("/tmp/korprev/sample.epub")

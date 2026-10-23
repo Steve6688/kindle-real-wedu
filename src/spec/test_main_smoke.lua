@@ -354,6 +354,8 @@ local rinst = P:new{ ui = rui, path = "/x" }; rinst:init()
 check("reader: centre zone registered", zones and zones[1].id == "realweidu_menu_tap" and zones[1].overrides[1] == "tap_forward"
     and zones[1].screen_zone.ratio_x == 0.25 and zones[1].screen_zone.ratio_w == 0.5)
 zones[1].handler()
+check("reader: 查词模式 zone registered, off -> passes through", zones[2] and zones[2].id == "realweidu_lookup_tap"
+    and zones[2].handler({ pos = { x = 600, y = 800 } }) == false)
 check("reader: tap shows WeRead menu", getmetatable(shown[#shown]).__index == RMcls and shown[#shown].ui == rui)
 S:saveSetting("reader_menu", false); zones = nil
 P:new{ ui = rui, path = "/x" }:init()

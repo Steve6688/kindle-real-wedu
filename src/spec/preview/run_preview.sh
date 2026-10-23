@@ -1,7 +1,7 @@
 #!/bin/sh
-# Box-only: render the shelf grid in the official KOReader v2026.07.1 Linux
-# build (SDL emulator, 1236x1648 @300dpi) WITHOUT SimpleUI (0.3.7) + a fake
-# logged-in weread (synthetic covers). Never copy this harness to the Kindle.
+# Box-only: render the unified Real微读 plugin in the official KOReader
+# v2026.07.1 Linux build (SDL emulator, 1236x1648 @300dpi) WITHOUT SimpleUI or
+# a separately installed weread plugin. Never copy this harness to the Kindle.
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$HERE/../.."; KW="$ROOT/.."
 K=/tmp/kor; R=/tmp/korprev
@@ -34,8 +34,6 @@ PY
 rm -rf /tmp/korprev/sample.sdr
 P=$K/lib/koreader/plugins
 rm -rf $P/simpleui.koplugin $P/realweidu.koplugin $P/zzwsprev.koplugin $P/weread.koplugin
-# WSPREV_OLD_WEREAD=1: also install the separate weread.koplugin (upgrade case)
-if [ -n "$WSPREV_OLD_WEREAD" ]; then cp -r "$KW/vendor/weread.koplugin" $P/; fi
 [ -n "$WSPREV_NO_WS" ] || cp -r "$ROOT/realweidu.koplugin" $P/
 mkdir -p $P/zzwsprev.koplugin && cp "$HERE/main.lua" "$HERE/_meta.lua" $P/zzwsprev.koplugin/
 rm -rf $K/lib/koreader/settings/simpleui
@@ -43,6 +41,7 @@ rm -f $K/lib/koreader/settings/realweidu.lua; echo "return {}" > $K/lib/koreader
 OUT="${WSPREV_DIR:-$KW/preview}"; mkdir -p "$OUT"; cd $K/lib/koreader
 for mode in ${WSPREV_MODES:-shelf shelf2 discover me reader font}; do
   SDL_VIDEODRIVER=dummy EMULATE_READER_W=1236 EMULATE_READER_H=1648 EMULATE_READER_DPI=300 \
-  WSPREV_WEREAD="$KW/vendor/weread.koplugin" WSPREV_MODE=$mode WSPREV_OUT="$OUT/$mode-1236x1648.png" timeout 60 ./luajit reader.lua -d $R 2>&1 | grep -aE "WSPREV|realweidu:|rweread|ERROR|rror" >> "$OUT/log.txt" || true
+  WSPREV_MODE=$mode WSPREV_OUT="$OUT/$mode-1236x1648.png" timeout 60 ./luajit reader.lua -d $R 2>&1 | tee -a "$OUT/log.txt"
+  test -s "$OUT/$mode-1236x1648.png"
 done
 ls -la "$OUT"

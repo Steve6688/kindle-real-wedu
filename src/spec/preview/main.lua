@@ -259,7 +259,6 @@ function H:init()
             UIManager:scheduleIn(4, shot); return
         elseif MODE == "download" then
             -- weread 1.6.0's own progress dialog, as fast download drives it
-            package.path = os.getenv("WSPREV_WEREAD") .. "/?.lua;" .. package.path
             local DD = require("rweread.ui.download_dialog")
             local F = require("realweidu_fastdl")
             P.showGrid()

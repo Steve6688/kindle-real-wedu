@@ -399,4 +399,19 @@ function M.home_grid(W, m, avail, fixed, rows, slots, min_gap, min_col_gap)
     return { cw = cw, ch = ch, gap = gap, xs = xs, vgap = vgap }
 end
 
+-- 0.6.6: vertical rhythm below 最近阅读. `left` = height from the bottom of the
+-- 最近阅读 titles to the nav bar. Both section gaps (previous titles' bottom ->
+-- next section's title text top) are the same S; the rest is fixed.
+-- t = { tab_h, tab_off (label top inside the tab row), inner (tabs -> covers),
+--       row (cover + title height), hdr_h, hdr_off (为你推荐 text top), pad (bottom) }
+function M.home_sections(left, t)
+    local used = t.tab_h + t.inner + t.row + t.hdr_h + t.row + t.pad
+    local S = math.floor((left - used + t.tab_off + t.hdr_off) / 2)
+    local tabs_y = S - t.tab_off
+    local rank_y = tabs_y + t.tab_h + t.inner
+    local hdr_y = rank_y + t.row + S - t.hdr_off
+    local rec_y = hdr_y + t.hdr_h
+    return { S = S, tabs_y = tabs_y, rank_y = rank_y, hdr_y = hdr_y, rec_y = rec_y, bottom = rec_y + t.row }
+end
+
 return M

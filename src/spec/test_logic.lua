@@ -149,4 +149,13 @@ for _, case in ipairs({ { 1236, 45, 1340, 560 }, { 1236, 45, 1340, 300 }, { 1072
     check("grid integer, identical steps " .. tag, G.gap == math.floor(G.gap) and steps_equal and G.gap >= 0)
     check("grid fits height " .. tag, fixed + 3 * G.ch + 4 * G.vgap <= avail or G.vgap == 20)
 end
+-- 0.6.6: equal section gaps (最近阅读 -> 榜单 -> 为你推荐), content above the nav
+for _, left in ipairs({ 1000, 1100, 1226, 900 }) do
+    local t = { tab_h = 84, tab_off = 22, inner = 20, row = 322, hdr_h = 80, hdr_off = 18, pad = 16 }
+    local S = L.home_sections(left, t)
+    local gap1 = S.tabs_y + t.tab_off            -- recent titles bottom -> tab text top
+    local gap2 = (S.hdr_y + t.hdr_off) - (S.rank_y + t.row) -- rank titles bottom -> 为你推荐 text top
+    check(string.format("left %d: section gaps equal (%d vs %d)", left, gap1, gap2), math.abs(gap1 - gap2) <= 2)
+    check(string.format("left %d: content above nav (%d <= %d)", left, S.bottom, left), S.bottom + t.pad <= left + 1)
+end
 print(string.format("\n%d checks, %d failed", n, fails)); os.exit(fails == 0 and 0 or 1)

@@ -172,7 +172,8 @@ function Discover:build(g)
         self.recent_rects[5] = rect(x, y, cw, ch)
         self:hit(rect(x, y, cw, ch + row_extra), function() if self.on_all then self.on_all() end end)
     end
-    y = y + ch + row_extra + G.vgap
+    y = y + ch + row_extra
+    self.recent_bottom = y
     self:build_weread(g, y)
 end
 function Discover.TAB_H() return math.max(U.px(84), 84) end
@@ -199,19 +200,34 @@ function Discover:cover_row(g, y, books, cw, ch, name_px, empty_text)
     return y + ch + U.px(8) + name_h
 end
 
-function Discover:build_weread(g, y)
+function Discover:build_weread(g, y0)
     local W, m = self.W, U.px(45)
     local R = self.rank
-    if not R then return y end
+    if not R then return y0 end
     self.cover_rects = {}
-    -- tabs (the block's header): bold + underline on the selected one
-    local tab_h = Discover.TAB_H()
+    local G = self.grid
+    local cw, ch = G.cw, G.ch
+    local name_px = self.name_px
+    local row = ch + U.px(8) + math.floor(name_px * 1.45)
+    local tab_h, hdr_h = Discover.TAB_H(), Discover.HDR_H()
+    -- measure the title texts first: gaps are taken to the text top (0.6.6)
+    local lbls = {}
+    for i, tab in ipairs(R.TABS) do lbls[i] = U.text(tab.name, U.px(34), i == R.tab) end
+    local rt = U.text("为你推荐", U.px(36), true)
+    local sw = U.text("换一批 ↻", U.px(32), true)
+    local tab_off = math.floor((tab_h - lbls[1]:getSize().h) / 2)
+    local hdr_off = math.floor((hdr_h - rt:getSize().h) / 2)
+    local L = Logic.home_sections(self.avail - y0, { tab_h = tab_h, tab_off = tab_off, inner = U.px(20),
+        row = row, hdr_h = hdr_h, hdr_off = hdr_off, pad = U.px(16) })
+    self.sections = L
+    -- tabs (the 榜单 section title): bold + underline on the selected one
+    local y = y0 + L.tabs_y
     local tw = math.floor((W - 2 * m) / #R.TABS)
     self.tab_rects = {}
     for i, tab in ipairs(R.TABS) do
         local x = m + (i - 1) * tw
         local on = i == R.tab
-        local lbl = U.text(tab.name, U.px(34), on)
+        local lbl = lbls[i]
         place(g, lbl, x + math.floor((tw - lbl:getSize().w) / 2), y + math.floor((tab_h - lbl:getSize().h) / 2))
         if on then place(g, U.hline(math.floor(tw * 0.5), U.px(6)), x + math.floor(tw * 0.25), y + tab_h - U.px(6)) end
         self.tab_rects[i] = rect(x, y, tw, tab_h)
@@ -220,31 +236,25 @@ function Discover:build_weread(g, y)
             if on and self.on_rank then self.on_rank(i) elseif self.on_tab then self.on_tab(i) end
         end)
     end
-    y = y + tab_h
-    place(g, U.hline(W - 2 * m, 1), m, y)
-    local G = self.grid
-    local cw, ch, vgap = G.cw, G.ch, G.vgap
-    local name_px = self.name_px
-    local hdr_h = Discover.HDR_H()
-    self.rank_layout = { ch = ch, cw = cw, vgap = vgap }
-    y = y + vgap
+    place(g, U.hline(W - 2 * m, 1), m, y + tab_h)
+    self.tabs_text_top = y + tab_off
+    self.rank_layout = { ch = ch, cw = cw, vgap = L.S }
     local books, loaded = R.rank_books()
     local empty = self.rank_error and ("榜单加载失败（点此重试）") or (loaded and "暂无榜单数据" or "正在加载榜单…")
-    local ry = y
-    y = self:cover_row(g, y, books, cw, ch, name_px, empty)
+    y = y0 + L.rank_y
+    self.rank_bottom = self:cover_row(g, y, books, cw, ch, name_px, empty)
     if #books == 0 then
-        self:hit(rect(0, ry, W, ch), function() if self.on_reload then self.on_reload() end end)
+        self:hit(rect(0, y, W, ch), function() if self.on_reload then self.on_reload() end end)
     end
-    y = y + vgap
     -- 为你推荐 + 换一批
-    local rt = U.text("为你推荐", U.px(36), true)
-    place(g, rt, m, y + math.floor((hdr_h - rt:getSize().h) / 2))
-    local sw = U.text("换一批 ↻", U.px(32), true)
+    y = y0 + L.hdr_y
+    place(g, rt, m, y + hdr_off)
+    self.rec_text_top = y + hdr_off
     local swx = W - m - sw:getSize().w
     place(g, sw, swx, y + math.floor((hdr_h - sw:getSize().h) / 2))
     self.more_rect = rect(swx - U.px(40), y, sw:getSize().w + U.px(40) + m, hdr_h)
     self:hit(self.more_rect, function() if self.on_more then self.on_more() end end)
-    y = y + hdr_h
+    y = y0 + L.rec_y
     y = self:cover_row(g, y, R.batch(), cw, ch, name_px, loaded and "暂无推荐" or "正在加载推荐…")
     self.weread_bottom = y
     return y

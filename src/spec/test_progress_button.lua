@@ -150,7 +150,7 @@ do
     check("empty / punctuation / bad input rejected", not W("") and not W("   ") and not W("'") and not W("--") and not W(nil) and not W(42) and not W("two words"))
     local f = io.open(here .. "/../realweidu.koplugin/main.lua"); local msrc = f:read("*a"); f:close()
     local meta = io.open(here .. "/../realweidu.koplugin/_meta.lua"):read("*a")
-    check("version 0.6.5", meta:find('"0.6.5"', 1, true) and msrc:find('RealWeidu.VERSION = "0.6.5"', 1, true))
+    check("version 0.6.6", meta:find('"0.6.6"', 1, true) and msrc:find('RealWeidu.VERSION = "0.6.6"', 1, true))
 end
 -- 0.6.4: 自动休眠 setting drives KOReader's autosuspend key; nav divider below the drop
 do

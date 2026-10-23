@@ -665,6 +665,14 @@ function H:init()
                                 tostring(gaps[1] - first.w), tostring(even), ok and "OK" or "BAD")
                         end
                         local L = pg.rank_layout
+                        if pg.sections then
+                            local g1 = pg.tabs_text_top - pg.recent_bottom
+                            local g2 = pg.rec_text_top - pg.rank_bottom
+                            local ok = math.abs(g1 - g2) <= 2 and pg.weread_bottom <= pg.avail
+                            if not ok then bad = bad + 1 end
+                            log("  GAPS 最近阅读->榜单=%dpx 榜单->为你推荐=%dpx diff=%d bottom=%d nav_top=%d %s",
+                                g1, g2, g1 - g2, pg.weread_bottom, pg.avail, ok and "PASS" or "FAIL")
+                        end
                         local nrows = 0; for _ in pairs(rows) do nrows = nrows + 1 end
                         if nrows ~= 3 then bad = bad + 1; log("  expected 3 cover rows, got %d", nrows) end
                         log("  cover %dx%d vgap=%d weread_bottom=%d avail=%d tab=%d", L.cw, L.ch, L.vgap, pg.weread_bottom, pg.avail, R.tab)

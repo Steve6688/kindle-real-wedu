@@ -161,6 +161,6 @@ do
     check("vocab enabled flag forced to english-ness and restored", msrc:find("vs.enabled = english; restore = true", 1, true) and msrc:find("if restore then vs.enabled = prev end", 1, true))
     check("fallback WordLookedUp only for english", msrc:find('if english and type(vs) ~= "table" and ui.vocabbuilder then', 1, true) ~= nil)
     local meta = io.open(here .. "/../realweidu.koplugin/_meta.lua"):read("*a")
-    check("version 0.5.1", meta:find('"0.5.1"', 1, true) and msrc:find('RealWeidu.VERSION = "0.5.1"', 1, true))
+    check("version 0.6.0", meta:find('"0.6.0"', 1, true) and msrc:find('RealWeidu.VERSION = "0.6.0"', 1, true))
 end
 print(string.format("\n%d checks, %d failed", n, fails)); os.exit(fails == 0 and 0 or 1)

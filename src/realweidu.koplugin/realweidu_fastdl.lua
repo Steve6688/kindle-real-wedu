@@ -42,6 +42,10 @@ local M = {
     stats = { batches = 0, prefetched = 0, fallbacks = 0, raised = 0, css_skipped = 0, max_seen = 0 },
 }
 
+local Net = require("realweidu_net")
+local Decrypt = require("realweidu_decrypt")
+M.Net, M.Decrypt = Net, Decrypt
+
 local function now() return os.time() + (os.clock() % 1) end
 M._now = function()
     local ok, t = pcall(require, "ui/time")
@@ -148,6 +152,7 @@ local function spawn(D, dl, i, Content, WorkerSettings)
     local state_css = dl.state and dl.state.css
     local fetch_x = Content.fetch_chapter_xhtml
     local pid, fd = P.spawn(function()
+        Net.reset() -- 0.6.0: this worker's phase timings go back with the result
         local cap = WorkerSettings and WorkerSettings.capture(D.settings)
         local xhtml, css
         if type(fetch_x) == "function" then
@@ -158,7 +163,7 @@ local function spawn(D, dl, i, Content, WorkerSettings)
             xhtml = Content._wrs_orig_fetch(D.client, D.settings, book, chapter, st)
             css = need_css and st.css or nil
         end
-        return { ok = true, xhtml = xhtml, css = css, fmt = book._content_format, auth = cap and cap() or nil }
+        return { ok = true, xhtml = xhtml, css = css, fmt = book._content_format, auth = cap and cap() or nil, perf = Net.reset() }
     end)
     local j = { i = i, chapter = chapter, pid = pid, fd = fd, t0 = M._now(), css = need_css }
     p.jobs[i] = j
@@ -178,6 +183,7 @@ local function on_result(D, dl, j, WorkerSettings, fingerprint)
     if j.pid then p.live = p.live - 1 end
     local r = j.res or {}
     if r.ok and type(r.xhtml) == "string" then
+        if r.perf then Net.merge(Net.perf, r.perf) end
         M.cache[key(dl.book, j.chapter)] = { xhtml = r.xhtml, css = r.css, fmt = r.fmt, annot = true }
         M.stats.prefetched = M.stats.prefetched + 1
         if r.auth and WorkerSettings then pcall(WorkerSettings.merge, D.settings, fingerprint, r.auth) end
@@ -294,6 +300,17 @@ function M.install()
     local D = L["rweread.lib.downloader"] or L["weread.lib.downloader"]
     local Content = L["rweread.lib.content"] or L["weread.lib.content"]
     if type(D) ~= "table" or type(Content) ~= "table" or D._wrs_fast then return false end
+    -- 0.6.0: fast byte-identical decrypt, gzip transfer, per-phase timings
+    M.speedups = {
+        decrypt = Decrypt.install(Content),
+        gzip = Net.install(L["rweread.lib.client"] or L["weread.lib.client"]) and Net.gzip_available(),
+    }
+    Net.time(Content, "decode_content_shards", "decrypt")
+    Net.time(Content, "decode_content_shard", "decrypt")
+    Net.time(Content, "extract_reader_state", "parse_reader_state")
+    Net.time(Content, "save_full_download_chapter", "disk_chapter")
+    Net.time(Content, "save_book_epub", "epub_package")
+    Net.time(Content, "save_chapter_epub", "epub_package")
     if type(D._step) ~= "function" or type(D._runInterruptible) ~= "function"
         or type(Content.fetch_single_chapter_source) ~= "function" then return false end
     local UIManager = require("ui/uimanager")
@@ -354,8 +371,18 @@ function M.install()
     D._step = function(self, dl)
         dl._wrs_inproc = nil
         if dl.progress_dialog then M.throttle_dialog(dl.progress_dialog) end
+        if not dl._wrs_t0 then dl._wrs_t0 = M._now(); Net.reset() end
         if dl.cancelled or dl.index > dl.total or not dl.trapper or dl.prefetch then
             if dl._wrs and (dl.cancelled or dl.index > dl.total) then kill_all(dl) end
+            if (dl.cancelled or dl.index > dl.total) and not dl._wrs_logged then
+                dl._wrs_logged = true
+                M.last_perf = { total = M._now() - dl._wrs_t0, chapters = dl.total, phases = Net.perf }
+                local okl, lg = pcall(require, "logger")
+                if okl and lg and lg.info then
+                    lg.info("realweidu download_perf", string.format("chapters=%s fetch_wall=%.1fs", tostring(dl.total), M.last_perf.total),
+                        "gzip=", tostring(M.speedups and M.speedups.gzip), "md5=", tostring(Decrypt.md5_name), Net.summary(Net.perf))
+                end
+            end
             return orig_step(self, dl)
         end
         local ch = dl.chapters[dl.index]

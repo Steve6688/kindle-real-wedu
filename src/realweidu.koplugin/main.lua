@@ -156,7 +156,7 @@ local function S() return RealWeidu._settings_override or settings() end
 local function on(key) return S():readSetting(key) ~= false end
 RealWeidu.isOn = on
 RealWeidu.ENTER_TEXT = "进入 Real微读"
-RealWeidu.VERSION = "0.5.1"
+RealWeidu.VERSION = "0.6.0"
 
 -- Put 「进入 Real微读」 at the top of KOReader's ☰ (main) menu tab instead of
 -- after Exit (items missing from the order table are appended at the end).
@@ -262,7 +262,11 @@ function RealWeidu:init()
     -- v0.3.6 faster weread downloads (default ON; 更多设置 → 快速下载).
     if on("fast_download") then
         local ok, e = pcall(FastDL.install)
-        if not ok then logger.warn("realweidu: fast download not installed:", e) end
+        if not ok then logger.warn("realweidu: fast download not installed:", e)
+        elseif e and FastDL.speedups then -- 0.6.0
+            logger.info("realweidu: fast download installed", "decrypt=", tostring(FastDL.speedups.decrypt),
+                "gzip=", tostring(FastDL.speedups.gzip), "md5=", tostring(FastDL.Decrypt.md5_name))
+        end
     end
 end
 

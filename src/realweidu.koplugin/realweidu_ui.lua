@@ -86,6 +86,9 @@ function U.status_bar(width)
         pct = p and p.getCapacity and p:getCapacity()
     end)
     local right = HorizontalGroup:new{ align = "center" }
+    -- 0.6.3 global screenshot button (tap the right part of the status line)
+    right[#right + 1] = U.text("截屏", U.px(30), true)
+    right[#right + 1] = U.hspan(U.px(40))
     -- small upright battery glyph (black body, cap on top)
     local bw, bh = U.px(18), U.px(30)
     right[#right + 1] = VerticalGroup:new{ align = "center", U.hline(U.px(8), U.px(4)), U.hline(bw, bh) }
@@ -105,7 +108,8 @@ function U.bottom_nav(active, width, has_prev, has_next)
     local sw = math.floor((width - 2 * m) / 5)
     local line_w = width - 2 * m
     local cells = HorizontalGroup:new{ align = "center", U.hspan(m) }
-    local cell_h = h - U.px(10)
+    local drop = U.px(70) -- 0.6.3: icons sit lower (less blank space under them)
+    local cell_h = h - U.px(10) - drop
     for _, id in ipairs(U.NAV_SLOTS) do
         local content
         if id == "prev" or id == "next" then
@@ -132,6 +136,7 @@ function U.bottom_nav(active, width, has_prev, has_next)
         width = width, height = h,
         VerticalGroup:new{ align = "left",
             FrameContainer:new{ bordersize = 0, padding = 0, margin = 0, height = U.px(10), width = width, marker },
+            VerticalSpan:new{ width = drop },
             cells,
         },
     }
@@ -177,6 +182,29 @@ function U.inside(g, x, y)
 end
 
 -- Content area below the status line (the bottom bar is drawn by each page).
+-- 0.6.3 global screenshot: status-line right half (home pages) / 「截屏」 in the reader bar.
+function U.is_shot_tap(x, y, width)
+    return y ~= nil and x ~= nil and y < U.status_h() and x >= math.floor((width or Screen:getWidth()) * 0.55)
+end
+function U.take_screenshot(delay)
+    local UIManager = require("ui/uimanager")
+    UIManager:scheduleIn(delay or 0.6, function() -- let the tapped menu close / repaint first
+        local inst
+        pcall(function() inst = require("apps/reader/readerui").instance end)
+        if not inst then pcall(function() inst = require("apps/filemanager/filemanager").instance end) end
+        if inst and inst.screenshot and inst.screenshot.onScreenshot then
+            local ok = pcall(inst.screenshot.onScreenshot, inst.screenshot)
+            if ok then return end
+        end
+        local dir = require("datastorage"):getDataDir() .. "/screenshots"
+        os.execute("mkdir -p '" .. dir .. "'")
+        local f = os.date(dir .. "/realweidu_%Y-%m-%d_%H%M%S.png")
+        Screen:shot(f)
+        UIManager:show(require("ui/widget/infomessage"):new{ text = "截屏已保存：" .. f, timeout = 3 })
+    end)
+    U.last_shot_request = os.time()
+end
+
 function U.content_area()
     local top = U.status_h()
     return top, Screen:getHeight() - top

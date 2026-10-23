@@ -61,6 +61,7 @@ function Page:hit(r, fn) self.hits[#self.hits + 1] = { r = r, fn = fn } end
 function Page:onTap(_, ges)
     local p = ges and ges.pos
     if not p then return end
+    if U.is_shot_tap(p.x, p.y, self.W) then U.take_screenshot(0.2); return true end -- 0.6.3
     local y = p.y - self.top
     for i = #self.hits, 1, -1 do
         local h = self.hits[i]
@@ -136,11 +137,7 @@ local Discover = Page:extend{
 
 function Discover:build(g)
     local W, m = self.W, U.px(45)
-    local y = U.px(24)
-    local sh = math.max(U.px(115), 120)
-    place(g, U.search_capsule(W - 2 * m, sh, "搜索微信读书", U.px(30)), m, y)
-    self:hit(rect(m, y, W - 2 * m, sh), function() if self.on_search then self.on_search() end end)
-    y = y + sh + U.px(20)
+    local y = U.px(24) -- 0.6.3: no search capsule here; the space goes to the rankings
     -- 最近阅读: 4 covers + 「全部 ›」 cell (UI-SPEC v1.1)
     local recent = Logic.recent(self.books, 4)
     local title = U.text("最近阅读", U.px(40), true)
@@ -163,77 +160,86 @@ function Discover:build(g)
         place(g, FrameContainer:new{ bordersize = 1, color = U.GRAY, background = U.WHITE, padding = 0, margin = 0,
             CenterContainer:new{ dimen = Geom:new{ w = cw - 2, h = ch - 2 }, U.text("全部 ›", U.px(32), true) } }, x, y)
         self:hit(rect(x, y, cw, ch + U.px(60)), function() if self.on_all then self.on_all() end end)
-        y = y + ch + U.px(10) + math.floor(name_px * 1.45) + U.px(30)
+        y = y + ch + U.px(10) + math.floor(name_px * 1.45) + U.px(24)
     end
-    -- 0.6.2: 「微信读书」 = WeRead rankings (switchable tabs) + 为你推荐 + 换一批
     self:build_weread(g, y)
 end
 
+-- 0.6.3: 「微信读书」 = one row per ranking (name ›, 4 covers side by side).
+-- Tapping a ranking name opens that whole ranking; 「换一批」 shifts every row.
 function Discover:build_weread(g, y)
     local W, m = self.W, U.px(45)
     local R = self.rank
     local t = U.text("微信读书", U.px(40), true)
-    place(g, t, m, y + U.px(6)); y = y + t:getSize().h + U.px(22)
-    if not R then return y end
-    -- tabs
-    local tab_h = math.max(U.px(80), 80)
-    local tw = math.floor((W - 2 * m) / #R.TABS)
-    for i, tab in ipairs(R.TABS) do
-        local x = m + (i - 1) * tw
-        local on = i == R.tab
-        local lbl = U.text(tab.name, U.px(32), on)
-        place(g, lbl, x + math.floor((tw - lbl:getSize().w) / 2), y + math.floor((tab_h - lbl:getSize().h) / 2))
-        if on then place(g, U.hline(math.floor(tw * 0.5), 4), x + math.floor(tw * 0.25), y + tab_h - 6) end
-        self:hit(rect(x, y, tw, tab_h), function() if self.on_tab then self.on_tab(i) end end)
-    end
-    y = y + tab_h
-    place(g, U.hline(W - 2 * m, 1), m, y - 1)
-    -- reserve the recommendation block
-    local gap = U.px(30)
-    local cw = math.floor((W - 2 * m - 3 * gap) / 4 * 0.72)
-    local ch = math.floor(cw * 280 / 200)
-    local name_px = U.px(26)
-    local rec_h = U.px(80) + ch + U.px(8) + math.floor(name_px * 1.45) + U.px(10)
-    local row_h = math.max(U.px(72), 72)
-    local fit = math.max(1, math.floor((self.avail - y - rec_h) / row_h))
-    local books, loaded = R.rank_books()
-    if #books == 0 then
-        local msg = U.text(self.rank_error and ("榜单加载失败：" .. self.rank_error .. "（点此重试）")
-            or (loaded and "暂无榜单数据" or "正在加载榜单…"), U.px(30))
-        place(g, msg, m, y + U.px(20))
-        self:hit(rect(0, y, W, row_h), function() if self.on_reload then self.on_reload() end end)
-        y = y + row_h
-    else
-        for i = 1, math.min(fit, #books) do
-            local b = books[i]
-            local line = U.textbox(i .. "  " .. b.title .. (b.author ~= "" and ("  ·  " .. b.author) or ""),
-                U.px(32), W - 2 * m, math.floor(U.px(32) * 1.45), i <= 3)
-            place(g, line, m, y + math.floor((row_h - U.px(32) * 1.4) / 2))
-            place(g, U.hline(W - 2 * m, 1), m, y + row_h - 1)
-            self:hit(rect(0, y, W, row_h), function() if self.on_book then self.on_book(b) end end)
-            y = y + row_h
-        end
-    end
-    -- 为你推荐 + 换一批
-    local rt = U.text("为你推荐", U.px(34), true)
-    place(g, rt, m, y + U.px(20))
+    place(g, t, m, y + U.px(6))
     local sw = U.text("换一批 ↻", U.px(32), true)
-    place(g, sw, W - m - sw:getSize().w, y + U.px(20))
-    self:hit(rect(W - m - sw:getSize().w - U.px(40), y, sw:getSize().w + U.px(80), U.px(80)),
+    local hh = t:getSize().h + U.px(22)
+    place(g, sw, W - m - sw:getSize().w, y + math.floor((hh - sw:getSize().h) / 2))
+    self:hit(rect(W - m - sw:getSize().w - U.px(40), y, sw:getSize().w + U.px(80), hh),
         function() if self.on_more then self.on_more() end end)
-    y = y + U.px(80)
-    local rec = R.batch()
-    if #rec == 0 then
-        place(g, U.text(loaded and "暂无推荐" or "正在加载推荐…", U.px(30)), m, y + U.px(10))
+    y = y + hh
+    if not R then return y end
+    if not R.any_loaded() then
+        local msg = U.text(self.rank_error and ("榜单加载失败：" .. self.rank_error .. "（点此重试）") or "正在加载榜单…", U.px(30))
+        place(g, msg, m, y + U.px(20))
+        self:hit(rect(0, y, W, U.px(100)), function() if self.on_reload then self.on_reload() end end)
+        return y + U.px(100)
     end
+    local name_h = math.max(U.px(64), 64)
+    local gap = U.px(30)
+    local left = self.avail - y
+    local n = #R.TABS
+    local min_ch = U.px(150)
+    while n > 1 and math.floor(left / n) - name_h - U.px(18) < min_ch do n = n - 1 end
+    local ch = math.min(U.px(260), math.floor(left / n) - name_h - U.px(18))
+    local cw = math.min(math.floor(ch * 200 / 280), math.floor((W - 2 * m - 3 * gap) / 4))
     local cgap = math.floor((W - 2 * m - 4 * cw) / 3)
-    for i, b in ipairs(rec) do
-        local x = m + (i - 1) * (cw + cgap)
-        place(g, U.cover(b.cover_file, b.title, cw, ch, name_px), x, y)
-        place(g, U.textbox(b.title, name_px, cw, math.floor(name_px * 1.45), true), x, y + ch + U.px(8))
-        self:hit(rect(x, y, cw, ch + U.px(50)), function() if self.on_book then self.on_book(b) end end)
+    self.rank_rows = {}
+    for i = 1, n do
+        local tab = R.TABS[i]
+        local nt = U.text(tab.name .. " ›", U.px(34), true)
+        place(g, nt, m, y + math.floor((name_h - nt:getSize().h) / 2))
+        self:hit(rect(0, y, W, name_h), function() if self.on_rank then self.on_rank(i) end end)
+        y = y + name_h
+        local row = R.row_books(i)
+        if #row == 0 then
+            place(g, U.text(R.list(i) and "暂无数据" or "加载失败", U.px(28)), m, y + U.px(10))
+        end
+        for k, b in ipairs(row) do
+            local x = m + (k - 1) * (cw + cgap)
+            place(g, U.cover(b.cover_file, b.title, cw, ch, U.px(24)), x, y)
+            self:hit(rect(x, y, cw, ch), function() if self.on_book then self.on_book(b) end end)
+        end
+        self.rank_rows[i] = rect(m, y, W - 2 * m, ch)
+        y = y + ch + U.px(18)
     end
-    return y + ch + U.px(50)
+    return y
+end
+
+-------------------------------------------------------------------------------
+-- 0.6.3 one ranking, full list (paged rows)
+-------------------------------------------------------------------------------
+local RankList = Page:extend{
+    name = "realweidu_ranklist",
+    nav_active = "discover",
+    title = nil, books = nil, on_book = nil, on_back = nil,
+}
+
+function RankList:build(g)
+    local W, m = self.W, U.px(45)
+    local y = U.px(24)
+    local t = U.text("‹ " .. (self.title or "榜单"), U.px(40), true)
+    place(g, t, m, y + U.px(10))
+    self:hit(rect(0, y, W, U.px(100)), function() if self.on_back then self.on_back() end end)
+    y = y + U.px(110)
+    place(g, U.hline(W - 2 * m, 1), m, y - 1)
+    local rows = {}
+    for i, b in ipairs(self.books or {}) do
+        rows[i] = { text = i .. "  " .. (b.title or "") .. ((b.author or "") ~= "" and ("  ·  " .. b.author) or ""),
+            fn = function() if self.on_book then self.on_book(b) end end }
+    end
+    if #rows == 0 then place(g, U.text("暂无数据", U.px(30)), m, y + U.px(20)); return end
+    self:rows_paged(g, y, rows, "_row_offset")
 end
 
 -------------------------------------------------------------------------------
@@ -304,4 +310,4 @@ function Me:build(g)
     y = self:rows_paged(g, y, self.rows or {}, "_row_offset")
 end
 
-return { Discover = Discover, Me = Me, Page = Page }
+return { Discover = Discover, Me = Me, Page = Page, RankList = RankList }

@@ -122,7 +122,7 @@ calls.search = nil
 P.showDiscover()
 local dp = shown[#shown]
 check("发现 page shown, grid closed", getmetatable(dp).__index == Pages.Discover and closed[#closed] == g2)
-check("0.6.2 发现 微信读书 = rankings + 换一批", dp.rank and #dp.rank.TABS >= 2 and dp.on_tab and dp.on_more and dp.on_book and dp.entries == nil)
+check("0.6.3 发现 微信读书 = ranking rows + 换一批", dp.rank and #dp.rank.TABS >= 2 and dp.on_rank and dp.on_more and dp.on_book and dp.entries == nil)
 check("发现 recent from shelf", dp.books and #dp.books == 2)
 dp.on_search(); check("发现 search -> weread showSearch", calls.search)
 dp.on_open(dp.books[1]); check("发现 recent tap -> open_book", _G.opened == dp.books[1].bookId)

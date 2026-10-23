@@ -157,7 +157,7 @@ local function S() return RealWeidu._settings_override or settings() end
 local function on(key) return S():readSetting(key) ~= false end
 RealWeidu.isOn = on
 RealWeidu.ENTER_TEXT = "进入 Real微读"
-RealWeidu.VERSION = "0.6.2"
+RealWeidu.VERSION = "0.6.3"
 
 -- Put 「进入 Real微读」 at the top of KOReader's ☰ (main) menu tab instead of
 -- after Exit (items missing from the order table are appended at the end).
@@ -816,7 +816,7 @@ function RealWeidu.showDiscover()
             RealWeidu._rank_error = "weread 不可用"; return
         end
         weread:runOnlineTask("加载微信读书榜单", function()
-            local ok, err = Rank.load(client, cover_dir(), force)
+            local ok, err = Rank.load_all(client, cover_dir(), force)
             RealWeidu._rank_error = (not ok) and tostring(err) or nil
             if RealWeidu._discover_page then
                 RealWeidu._discover_page.rank_error = RealWeidu._rank_error
@@ -826,12 +826,8 @@ function RealWeidu.showDiscover()
     end
     local page = Pages.Discover:new{
         books = books, rank = Rank, rank_error = RealWeidu._rank_error,
-        on_tab = function(i) Rank.set_tab(i); RealWeidu._discover_page:refresh(); load(false) end,
-        on_more = function()
-            local need = Rank.next_batch()
-            RealWeidu._discover_page:refresh()
-            if need or #Rank.batch() > 0 then load(false) end
-        end,
+        on_rank = function(i) RealWeidu.showRanking(i) end, -- 0.6.3
+        on_more = function() Rank.shift_rows(); RealWeidu._discover_page:refresh(); load(false) end,
         on_reload = function() load(true) end,
         on_book = function(b)
             local ok = Data.open_book(weread, b.bookId)
@@ -851,10 +847,35 @@ function RealWeidu.showDiscover()
     }
     RealWeidu._discover_page = page
     local r = show_page(page, QA_DISCOVER, old_pages)
-    if not (Rank.lists[Rank.TABS[Rank.tab].id]) and not RealWeidu._rank_loading_disabled then
+    if not Rank.any_loaded() then
         UIManager:nextTick(function() load(false) end)
     end
     return r
+end
+
+-- 0.6.3: one ranking as a full list page (tap a book -> shelf book or detail page)
+function RealWeidu.showRanking(i)
+    local weread = Data.find_weread()
+    local Rank = require("realweidu_rank")
+    local tab = Rank.TABS[i]
+    if not (weread and tab) then return end
+    local Pages = require("realweidu_pages")
+    local old_pages = take_pages()
+    local page = Pages.RankList:new{
+        title = tab.name, books = Rank.list(i) or {},
+        on_back = function() RealWeidu.showDiscover() end,
+        on_book = function(b)
+            local ok = Data.open_book(weread, b.bookId)
+            if not ok then
+                call_weread("showBookRecord", { book_id = b.bookId, bookId = b.bookId, title = b.title, author = b.author, cover = b.cover })
+            end
+        end,
+        on_nav_discover = function() RealWeidu.showDiscover() end,
+        on_nav_shelf = function() RealWeidu.showGrid() end,
+        on_nav_me = function() RealWeidu.showMe() end,
+    }
+    RealWeidu._rank_page = page
+    return show_page(page, QA_DISCOVER, old_pages)
 end
 
 -- 我: account name (weread settings "account", qr_login.lua:288-293), 本周阅读

@@ -76,7 +76,7 @@ local b = builds[#builds]
 check("placeholders for missing chapters", b.n == 10 and b.bodies["110"]:find("本章正在下载", 1, true) ~= nil
     and b.bodies["101"]:find("text of 1", 1, true) ~= nil)
 check("record registered as cached_full_book", books.B1 and books.B1.cached_full_book == opened[1])
-check("shelf label shows progress", (S.shelf_label("B1") or ""):match("^边下边读 %d+/10$") ~= nil)
+check("shelf label shows progress", S.shelf_label("B1") == "正在下载…")
 check("job index persisted for resume", Gs.realweidu_stream and Gs.realweidu_stream.B1 and Gs.realweidu_stream.B1.total == 10)
 
 -- priority: reader jumps to chapter 9 (a placeholder)

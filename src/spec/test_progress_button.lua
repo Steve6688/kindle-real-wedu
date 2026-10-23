@@ -46,7 +46,10 @@ check("unknown doc -> all —", i.pct_text == "—" and i.chapter_text == "—" 
 -- source-level: menu wiring
 local f = io.open(here .. "/../realweidu.koplugin/realweidu_readermenu.lua"); local src = f:read("*a"); f:close()
 check("middle button uses pct + card", src:find('draw = "pct",%s+fn = function%(%) self:toggleProgressCard%(%)') ~= nil)
-check("card uses partial ui refresh", src:find('self.progress_open = not self.progress_open\n    if self.progress_open then self.bright_open = false end\n    self:refresh%("ui"%)') ~= nil)
+check("card uses partial ui refresh", src:find('self:openPanel%(%(not self.progress_open%) and "progress" or nil%)\n    self:refresh%("ui"%)') ~= nil)
+check("0.6.3 refresh repaints the page under the menu", src:find('UIManager:setDirty("all", mode or "ui")', 1, true) ~= nil)
+check("0.6.3 light frac clamped", L.light_frac(100, 0, 24) == 1 and L.light_frac(-3, 0, 24) == 0 and L.light_frac(12, 0, 24) == 0.5 and L.light_frac(nil, 0, 1) == 0)
+check("0.6.3 warmth uses native scale", src:find("p:toNativeWarmth(ko)", 1, true) and src:find("p:fromNativeWarmth(nat)", 1, true))
 check("reads KOReader statistics", src:find("ui.statistics") ~= nil and src:find("avg_time = st.avg_time", 1, true) ~= nil)
 check("A button untouched", src:find('local name = self.font_open and "rm_font_active" or "rm_font"', 1, true) ~= nil)
 local blk = (src:match("%-%- 0%.4%.5 middle button(.-)function RM:showBrightness%(") or ""):gsub("%-%-[^\n]*", "")
@@ -68,7 +71,7 @@ check("0.4.7: AI float kept, at right edge", src:find('float("AI", x_ai', 1, tru
 check("fmt_short", L.fmt_short(nil) == "—" and L.fmt_short(20) == "<1分" and L.fmt_short(300) == "余5分" and L.fmt_short(7200) == "余2时")
 i = L.progress_info(40, 100, 52, { avg_time = 30 })
 check("info exposes chapter/book secs", i.chapter_secs == 360 and i.book_secs == 1800)
-check("TOC sidebar 80%", L.TOC_SIDEBAR_FRAC == 0.8)
+check("TOC sidebar 50%", L.TOC_SIDEBAR_FRAC == 0.5)
 local bld = src:match("function RM:_build%(%)(.-)\nend") or ""
 check("_build uses classic bars only (no official panel/floats)", bld:find("_classicTopBar", 1, true) and bld:find("_classicBottomBar", 1, true)
     and not bld:find("self:_bottomBar", 1, true) and not bld:find("self:_topBar", 1, true))
@@ -147,6 +150,6 @@ do
     check("empty / punctuation / bad input rejected", not W("") and not W("   ") and not W("'") and not W("--") and not W(nil) and not W(42) and not W("two words"))
     local f = io.open(here .. "/../realweidu.koplugin/main.lua"); local msrc = f:read("*a"); f:close()
     local meta = io.open(here .. "/../realweidu.koplugin/_meta.lua"):read("*a")
-    check("version 0.6.2", meta:find('"0.6.2"', 1, true) and msrc:find('RealWeidu.VERSION = "0.6.2"', 1, true))
+    check("version 0.6.3", meta:find('"0.6.3"', 1, true) and msrc:find('RealWeidu.VERSION = "0.6.3"', 1, true))
 end
 print(string.format("\n%d checks, %d failed", n, fails)); os.exit(fails == 0 and 0 or 1)

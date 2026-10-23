@@ -420,6 +420,112 @@ function H:init()
                 shot()
             end)
             return
+        elseif MODE == "taps063" then
+            -- 0.6.3: drive REAL gesture events (UIManager:sendEvent(Gesture)) through ReaderUI's
+            -- touch zones and our menu; screenshot + state/bounds log after every step.
+            require("apps/reader/readerui"):showReader("/tmp/korprev/sample.epub")
+            local Event, Geom = require("ui/event"), require("ui/geometry")
+            local ok_t, time = pcall(require, "ui/time")
+            local Device = require("device")
+            local W, H = Screen:getWidth(), Screen:getHeight()
+            local dir = os.getenv("WSPREV_DIR") or "/tmp/korprev"
+            local function tap(x, y)
+                UIManager:sendEvent(Event:new("Gesture", { ges = "tap", pos = Geom:new{ x = x, y = y, w = 0, h = 0 },
+                    time = ok_t and time.now() or 0 }))
+            end
+            local function menu()
+                for i = #UIManager._window_stack, 1, -1 do
+                    local w = UIManager._window_stack[i].widget
+                    if w.name == "realweidu_readermenu" then return w end
+                end
+            end
+            local function slot(i)
+                local L = require("realweidu_logic")
+                local x, sw = L.slot(W, 5, i)
+                local bh = math.max(require("realweidu_ui").px(130), 120)
+                return x + math.floor(sw / 2), H - math.floor(bh / 2)
+            end
+            local fails = 0
+            local function check_state(name)
+                local m = menu()
+                local st = m and string.format("progress=%s bright=%s font=%s sheet=%s toc=%s",
+                    tostring(m.progress_open), tostring(m.bright_open), tostring(m.font_open), tostring(m.sheet_open), tostring(m.toc_open)) or "menu=closed"
+                local n_open, oob = 0, 0
+                if m then
+                    for _, k in ipairs({ "progress_open", "bright_open", "font_open", "sheet_open", "toc_open" }) do if m[k] then n_open = n_open + 1 end end
+                    for _, c in ipairs(m[1] or {}) do
+                        local o, sz = c.overlap_offset or { 0, 0 }, c:getSize()
+                        if o[1] < 0 or o[2] < 0 or o[1] + sz.w > W or o[2] + sz.h > H then
+                            oob = oob + 1
+                            io.stderr:write(string.format("WSPREV063 OOB %s at %d,%d size %dx%d\n", name, o[1], o[2], sz.w, sz.h))
+                        end
+                    end
+                    for _, h in ipairs(m.hits or {}) do
+                        local r = h.r
+                        if r.x + r.w > W + 60 or r.y + r.h > H or r.y < 0 then oob = oob + 1
+                            io.stderr:write(string.format("WSPREV063 OOB-hit %s %d,%d %dx%d\n", name, r.x, r.y, r.w, r.h)) end
+                    end
+                end
+                if n_open > 1 or oob > 0 then fails = fails + 1 end
+                io.stderr:write(string.format("WSPREV063 step %s: %s open_panels=%d out_of_bounds=%d\n", name, st, n_open, oob))
+            end
+            local steps, k = {}, 0
+            local function add(name, fn) steps[#steps + 1] = { name = name, fn = fn } end
+            add("01-menu-open", function() tap(math.floor(W / 2), math.floor(H / 2)) end)
+            add("02-progress-open", function() tap(slot(3)) end)
+            add("03-progress-closed", function() tap(slot(3)) end)
+            add("04-progress-open-again", function() tap(slot(3)) end)
+            add("05-progress-closed-again", function() tap(slot(3)) end)
+            add("06-font-open", function() tap(slot(5)) end)
+            add("07-font-to-light", function() tap(slot(4)) end)        -- sun in the font bar
+            add("08-light-to-font", function() tap(slot(5)) end)        -- A in the classic bar
+            add("09-font-to-light-again", function() tap(slot(4)) end)
+            add("10-light-closed", function() tap(slot(4)) end)
+            add("11-progress-then-light", function() tap(slot(3)); tap(slot(4)) end)
+            add("12-warm-kindle-scale", function()
+                -- emulate a Kindle native warmth range (0-24) and KOReader warmth 75%
+                local p = Device:getPowerDevice()
+                p.fl_warmth_max = 24; p.warmth_scale = 100 / 24
+                pcall(p.setWarmth, p, 75)
+                local m = menu(); m:refresh("ui")
+                local v = m:lightValues()
+                io.stderr:write(string.format("WSPREV063 warm ko=%s native=%s range=%s..%s expect native=18\n",
+                    tostring(p:frontlightWarmth()), tostring(v.warm), tostring(v.wmin), tostring(v.wmax)))
+            end)
+            add("13-warm-set-by-tap", function()
+                local m = menu()
+                -- tap the warm track at its right end -> native 24 (100%)
+                local ur = require("realweidu_ui")
+                local pad = ur.px(64)
+                tap(W - pad - ur.px(110) - 5, m.panel_rect.y + ur.px(30) + ur.px(130) + math.floor(ur.px(130) / 2))
+                local p = Device:getPowerDevice()
+                io.stderr:write(string.format("WSPREV063 warm after tap ko=%s native=%s\n", tostring(p:frontlightWarmth()), tostring(m:lightValues().warm)))
+            end)
+            add("14-toc-50pct", function() tap(slot(4)); tap(slot(2)) end)
+            add("15-toc-closed", function() tap(math.floor(W * 0.8), math.floor(H / 2)) end)
+            local function run()
+                k = k + 1
+                local st = steps[k]
+                if not st then
+                    io.stderr:write("WSPREV063 DONE fails=" .. fails .. "\n")
+                    UIManager:quit(); return
+                end
+                st.fn()
+                UIManager:scheduleIn(1.2, function()
+                    Screen:shot(dir .. "/" .. st.name .. ".png")
+                    check_state(st.name)
+                    run()
+                end)
+            end
+            UIManager:scheduleIn(4, function()
+                for i = #UIManager._window_stack, 1, -1 do
+                    local w = UIManager._window_stack[i] and UIManager._window_stack[i].widget
+                    if w and w.text then UIManager:close(w) end
+                end
+                Screen:shot(dir .. "/00-book.png")
+                UIManager:scheduleIn(1, run)
+            end)
+            return
         elseif MODE == "footer" or MODE == "bright2" or MODE == "syncprog" or MODE == "more062" or MODE == "progress062" then
             require("apps/reader/readerui"):showReader("/tmp/korprev/sample.epub")
             UIManager:scheduleIn(4, function()
@@ -490,9 +596,11 @@ function H:init()
             local rec = list("rec", 12)
             for i = 1, #rec do rec[i] = list("rec", 12)[((i + 4) % 12) + 1] end
             R.lists[R.RECOMMEND .. ":0"] = { books = rec }
-            if MODE == "discover2" then R.set_tab(2) end
-            if MODE == "discover3" then R.next_batch() end
-            P.showDiscover()
+            if MODE == "discover2" then P.showRanking(2) -- 0.6.3: tapping a ranking name
+            else
+                if MODE == "discover3" then R.shift_rows() end -- 0.6.3: 换一批
+                P.showDiscover()
+            end
         elseif MODE == "me" then P.showMe()
         else
             if MODE == "streamshelf" then -- 0.6.1: shelf progress label

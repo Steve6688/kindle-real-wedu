@@ -139,8 +139,8 @@ end
 function M.shelf_label(book_id)
     local st = M.status(book_id)
     if not st then return nil end
-    local word = st.state == "paused" and "下载暂停" or "边下边读"
-    return string.format("%s %d/%d", word, st.done or 0, st.total or 0)
+    if st.state ~= "paused" then return "正在下载…" end -- 0.6.3
+    return string.format("下载暂停 %d/%d", st.done or 0, st.total or 0)
 end
 
 function M.status(book_id)

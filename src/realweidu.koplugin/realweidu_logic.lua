@@ -239,7 +239,7 @@ end
 -- 0.4.5 middle progress button ------------------------------------------------
 M.DEFAULT_PAGES_PER_MIN = 1   -- fallback when KOReader has no reading stats
 M.UNKNOWN = "—"
-M.TOC_SIDEBAR_FRAC = 0.8  -- 0.4.8: TOC sidebar width; right 20% = tap-to-close strip
+M.TOC_SIDEBAR_FRAC = 0.5  -- 0.6.3: TOC sidebar = 50% width; right half = tap-to-close
 
 -- Percent read (0..100, integer) from current page and page count; nil if unknown.
 function M.progress_pct(cur, total)
@@ -374,5 +374,11 @@ function M.sync_progress_text(local_pct, remote_pct, err)
     local t = "本地进度：" .. f(local_pct) .. "\n微信读书进度：" .. f(remote_pct)
     if err then t = t .. "\n（读取微信读书进度失败：" .. err .. "）" end
     return t .. "\n\n同步后将按微信读书的规则对齐两端进度。确定同步？"
+end
+-- 0.6.3 light slider fraction, clamped so the knob never leaves the track
+function M.light_frac(v, lo, hi)
+    v, lo, hi = tonumber(v), tonumber(lo), tonumber(hi)
+    if not v or not lo or not hi or hi <= lo then return 0 end
+    return math.max(0, math.min(1, (v - lo) / (hi - lo)))
 end
 return M

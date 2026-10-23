@@ -273,7 +273,7 @@ function RM:_bottomBar(g)
         { draw = "toc",     fn = function() self:showTocSheet() end },
         { draw = "compass", fn = function() self:showBookmarks() end }, -- closest: 书签/跳转
         { draw = "pct",     fn = function() self:toggleProgressCard() end }, -- 0.4.5: progress + remaining time
-        { draw = "sun",     fn = function() self:showBrightnessPanel() end },
+        { draw = "sun",     fn = function() self:toggleBrightPanel() end }, -- 0.6.3: font panel closes
         { draw = "A",       fn = function() self:toggleFont() end },
     }
     -- 0.4.6: card sits above the whole panel (and the AI float), never over the slider / ‹ ›
@@ -343,7 +343,7 @@ function RM:_fontIconBar(g)
         { draw = "toc",     fn = function() self:showTocSheet() end },
         { draw = "compass", fn = function() self:showBookmarks() end },
         { draw = "dot",     fn = function() -- 0.6.2: no jump-to-progress; back to the bars + progress card
-            self.font_open = false; self.progress_open = true; self:refresh("ui") end },
+            self:openPanel("progress"); self:refresh("full") end },
         { draw = "sun",     fn = function() self:showBrightnessPanel() end },
         { draw = "A",       fn = function() self:toggleFont() end },
     }
@@ -506,7 +506,13 @@ function RM:lightValues()
         pcall(function()
             v.min, v.max = p.fl_min or 0, p.fl_max or 100
             v.fl = p:frontlightIntensity()
-            if v.has_warm then v.wmin, v.wmax, v.warm = p.fl_warmth_min or 0, p.fl_warmth_max or 100, p:frontlightWarmth() end
+            if v.has_warm then
+                -- 0.6.3: frontlightWarmth() is KOReader's 0-100 scale but fl_warmth_min/max are the
+                -- device's native range (e.g. 0-24 on Kindle): convert, as frontlightwidget.lua does.
+                v.wmin, v.wmax = p.fl_warmth_min or 0, p.fl_warmth_max or 100
+                local ko = p:frontlightWarmth()
+                v.warm = (ko and p.toNativeWarmth) and p:toNativeWarmth(ko) or ko
+            end
         end)
     end
     return v
@@ -517,7 +523,8 @@ function RM:setLight(kind, frac)
     frac = math.max(0, math.min(1, frac))
     pcall(function()
         if kind == "fl" and v.has_fl then p:setIntensity(math.floor(v.min + frac * (v.max - v.min) + 0.5))
-        elseif kind == "warm" and v.has_warm then p:setWarmth(math.floor(v.wmin + frac * (v.wmax - v.wmin) + 0.5)) end
+        elseif kind == "warm" and v.has_warm then local nat = math.floor(v.wmin + frac * (v.wmax - v.wmin) + 0.5)
+            p:setWarmth(p.fromNativeWarmth and p:fromNativeWarmth(nat) or nat) end
     end)
     self:refresh("ui")
 end
@@ -603,7 +610,7 @@ function RM:_sheet(g)
         place(g, vt, W - pad - vt:getSize().w, y + math.floor((h - vt:getSize().h) / 2))
         y = y + h
     end
-    local function frac(v, lo, hi) if not v or not lo or not hi or hi <= lo then return 0 end return (v - lo) / (hi - lo) end
+    local frac = Logic.light_frac -- 0.6.3: clamped 0..1
     lightrow("亮度", "fl", lv.has_fl and lv.fl ~= nil, frac(lv.fl, lv.min, lv.max), lv.has_fl and tostring(lv.fl or "—") or "无")
     lightrow("暖光", "warm", lv.has_warm and lv.warm ~= nil, frac(lv.warm, lv.wmin, lv.wmax),
         lv.has_warm and tostring(lv.warm or "—") or "不支持")
@@ -628,7 +635,7 @@ function RM:_sheet(g)
     self:_hit(rect(0, y, W, mh), function() self:showMoreReading() end)
 end
 
-function RM:openSheet() self.sheet_open = true; self.font_open = false; self:refresh("ui") end
+function RM:openSheet() self:openPanel("sheet"); self:refresh("ui") end
 function RM:closeSheet() self.sheet_open = false; self:refresh("ui") end
 
 -- 「更多设置」 inside a book: everything that is not 字号 / 光 / 翻页.
@@ -639,7 +646,7 @@ function RM:showMoreReading()
         title = "更多设置",
         buttons = {
             item("字体、粗细、行距、边距、缩进", function()
-                if self:isRolling() then self.sheet_open = false; self.font_open = true; self:refresh("ui")
+                if self:isRolling() then self:openPanel("font"); self:refresh("full")
                 else self:close(); send_event(self.ui, "ShowConfigMenu") end end),
             item("目录", function() self:showToc() end),
             item("书签与笔记", function() self:close(); send_event(self.ui, "ShowBookmark") end),
@@ -673,9 +680,27 @@ function RM:_build()
     self[1] = g
 end
 
+-- 0.6.3: repaint the book page under the menu too. setDirty(self) only repaints this
+-- widget (and those above it), so a panel that was closed stayed on the e-ink screen
+-- as stale pixels ("cannot collapse" / "panels overlap" on Kindle).
 function RM:refresh(mode)
     self:_build()
-    UIManager:setDirty(self, mode or "ui")
+    UIManager:setDirty("all", mode or "ui")
+end
+
+-- 0.6.3: exactly one panel at a time: nil | "progress" | "bright" | "font" | "sheet" | "toc"
+function RM:openPanel(name)
+    self.progress_open = name == "progress"
+    self.bright_open = name == "bright"
+    self.font_open = name == "font"
+    self.sheet_open = name == "sheet"
+    self.toc_open = name == "toc"
+end
+function RM:currentPanel()
+    if self.toc_open then return "toc" elseif self.sheet_open then return "sheet"
+    elseif self.font_open then return "font" elseif self.bright_open then return "bright"
+    elseif self.progress_open then return "progress" end
+    return nil
 end
 
 function RM:onTap(_, ges)
@@ -734,7 +759,7 @@ function RM:_classicTopBar(g)
     pcall(function() chapter = self.ui.toc:getTocTitleOfCurrentPage() end)
     local book = self.ui.doc_props and self.ui.doc_props.display_title or ""
     local title = Logic.reader_title(chapter, book)
-    local right_w = 2 * m.bar_h
+    local right_w = 3 * m.bar_h -- 0.6.3: 截屏 | 书签 | ⋯
     local back = HorizontalGroup:new{ align = "center",
         U.icon("back_chevron", math.floor(m.icon * 0.6)), U.hspan(U.px(12)),
         U.text(title, m.title_px, false, W - 2 * m.margin - right_w - m.icon) }
@@ -742,11 +767,14 @@ function RM:_classicTopBar(g)
         HorizontalGroup:new{ U.hspan(m.margin), back } }, 0, 0)
     local marked = false
     pcall(function() marked = self.ui.bookmark:isPageBookmarked() end)
-    local bx = W - right_w
+    local sx = W - right_w -- 0.6.3 截屏
+    place(g, CenterContainer:new{ dimen = Geom:new{ w = m.bar_h, h = m.bar_h }, U.text("截屏", U.px(30), true) }, sx, 0)
+    self:_hit(rect(sx, 0, m.bar_h, m.bar_h), function() self:close(); U.take_screenshot(0.8) end)
+    local bx = W - 2 * m.bar_h
     place(g, CenterContainer:new{ dimen = Geom:new{ w = m.bar_h, h = m.bar_h },
         U.icon(marked and "bookmark_active" or "bookmark", m.icon) }, bx, 0)
     place(g, CenterContainer:new{ dimen = Geom:new{ w = m.bar_h, h = m.bar_h }, U.icon("more", m.icon) }, bx + m.bar_h, 0)
-    self:_hit(rect(0, 0, bx, m.bar_h), function() self:back() end)
+    self:_hit(rect(0, 0, sx, m.bar_h), function() self:back() end)
     self:_hit(rect(bx, 0, m.bar_h, m.bar_h), function() self:toggleBookmark() end)
     self:_hit(rect(bx + m.bar_h, 0, m.bar_h, m.bar_h), function() self:showMore() end)
 end
@@ -806,9 +834,9 @@ end
 -- 0.6.2: brightness / warmth panel drawn above the bottom bar; the bar stays.
 function RM:toggleBrightPanel()
     if not Device:hasFrontlight() then return self:showClassicBrightness() end
-    self.bright_open = not self.bright_open
-    if self.bright_open then self.progress_open = false end
-    self:refresh("ui")
+    local was_font = self.font_open
+    self:openPanel((not self.bright_open) and "bright" or nil)
+    self:refresh(was_font and "full" or "ui")
 end
 
 function RM:_brightPanel(g, bar_y)
@@ -824,7 +852,7 @@ function RM:_brightPanel(g, bar_y)
     self.panel_rect = rect(0, y0, W, h)
     self:_hit(rect(0, y0, W, h), function() end) -- swallow taps between rows
     local y = y0 + U.px(30)
-    local function frac(v, lo, hi) if not v or not lo or not hi or hi <= lo then return 0 end return (v - lo) / (hi - lo) end
+    local frac = Logic.light_frac -- 0.6.3: clamped 0..1
     local function lightrow(name, kind, enabled, f, value_txt)
         local rh = U.px(130)
         local lw = U.text(name, U.px(34)); lw.fgcolor = LABEL_GRAY
@@ -880,8 +908,7 @@ function RM:_progressInfo()
 end
 
 function RM:toggleProgressCard()
-    self.progress_open = not self.progress_open
-    if self.progress_open then self.bright_open = false end
+    self:openPanel((not self.progress_open) and "progress" or nil)
     self:refresh("ui") -- partial refresh, no animation
 end
 
@@ -912,10 +939,7 @@ end
 function RM:showBrightness() self:showBrightnessPanel() end
 function RM:showBrightnessPanel()
     -- Prefer in-menu brightness sheet when device has frontlight; else KOReader dialog.
-    if Device:hasFrontlight() then
-        self.sheet_open = true; self.font_open = false; self.toc_open = false
-        self:refresh("ui"); return
-    end
+    if Device:hasFrontlight() then return self:toggleBrightPanel() end
     self:close()
     UIManager:broadcastEvent(Event:new("ShowFlDialog"))
 end
@@ -924,8 +948,7 @@ function RM:toggleFont()
     if not self:isRolling() then
         self:close(); send(self.ui, "ShowConfigMenu"); return
     end
-    self.font_open = not self.font_open
-    self.sheet_open = false; self.toc_open = false
+    self:openPanel((not self.font_open) and "font" or nil)
     self:refresh("full")
 end
 
@@ -1013,7 +1036,7 @@ function RM:onSwipe(_, ges)
 end
 function RM:showTocSheet()
     self.toc_page = nil -- reopen on the current chapter's page
-    self.toc_open = true; self.font_open = false; self.sheet_open = false
+    self:openPanel("toc")
     self:refresh("ui")
 end
 

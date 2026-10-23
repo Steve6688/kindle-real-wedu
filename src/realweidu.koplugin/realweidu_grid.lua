@@ -293,6 +293,7 @@ end
 function ShelfGrid:onTap(_, ges)
     local pos = ges and ges.pos
     if not pos then return end
+    if U.is_shot_tap(pos.x, pos.y, Screen:getWidth()) then U.take_screenshot(0.2); return true end -- 0.6.3
     if self.own_nav and pos.y >= self.nav_top then
         local slot = U.NAV_SLOTS[U.nav_slot(pos.x, Screen:getWidth())]
         if slot == "prev" then self:onPrevPage()

@@ -125,4 +125,39 @@ end
 
 function M.set_tab(i) if M.TABS[i] then M.tab = i end end
 
+-- 0.6.3 home layout: every ranking is one row of 4 covers; 「换一批」 shifts all rows.
+M.ROW_N, M.shift = 4, 0
+function M.list(i)
+    local t = M.TABS[i]
+    local l = t and M.lists[t.id]
+    return l and l.books or nil
+end
+function M.row_books(i)
+    local l = M.list(i) or {}
+    local out = {}
+    if #l == 0 then return out end
+    local pages = math.max(1, math.floor(#l / M.ROW_N))
+    local start = (M.shift % pages) * M.ROW_N
+    for k = 1, M.ROW_N do out[k] = l[start + k] end
+    return out
+end
+function M.shift_rows() M.shift = M.shift + 1 end
+-- fetch every ranking (cached) + covers of the visible rows
+function M.load_all(client, dir, force)
+    local first_err
+    for i, t in ipairs(M.TABS) do
+        if force or not M.lists[t.id] then
+            local books, err = M.fetch(client, t.id, 0)
+            if books then M.lists[t.id] = { books = books } else first_err = first_err or err end
+        end
+        local row = M.row_books(i)
+        if #row > 0 then M.fetch_covers(client, row, dir) end
+    end
+    return first_err == nil, first_err
+end
+function M.any_loaded()
+    for _, t in ipairs(M.TABS) do if M.lists[t.id] then return true end end
+    return false
+end
+
 return M

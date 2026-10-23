@@ -1,4 +1,4 @@
-# Real微读（realweidu.koplugin）安装说明 — v0.4.1
+# Real微读（realweidu.koplugin）安装说明 — v0.4.5
 
 适用：KOReader v2026.07.1（Kindle PW5）。**0.4.0 已内置 weread.koplugin 1.6.0（AGPL-3.0），只需装这一个插件。****不需要 SimpleUI。**
 内置的微信读书沿用原设置 `settings/weread.lua` 与数据目录 `weread/`：**登录、Cookie、缓存、已下载的书和设置全部保留，不用重新登录。** 本插件自己的设置在 `settings/realweidu.lua`。
@@ -9,7 +9,7 @@ USB 连接 Kindle，把整个 `koreader/settings/` 复制到电脑，例如 `set
 
 ## 1. 全新安装 / 从 v0.1、v0.2 升级
 1. 完全退出 KOReader（菜单 → 退出），USB 连电脑。
-2. **删除 `koreader/plugins/weread.koplugin/`（已内置）和旧的 `koreader/plugins/wereadshelf.koplugin/`（0.4.1 起改名 realweidu.koplugin）**；忘了删也没关系，Real微读会自动停用它们，不会出现重复菜单。升级 realweidu 时先删旧的 `koreader/plugins/realweidu.koplugin/`，再把本仓库 `src/realweidu.koplugin/` **整个文件夹**拷过去：
+2. 只安装本仓库的 `src/realweidu.koplugin/` **整个文件夹**。它已经包含微信读书内核，不需要再安装单独的 `weread.koplugin`：
 ```
 koreader/plugins/realweidu.koplugin/
     _meta.lua  main.lua  realweidu_data.lua  realweidu_layout.lua  realweidu_grid.lua
@@ -19,7 +19,7 @@ koreader/plugins/realweidu.koplugin/
 ```
 （`src/spec/` 是电脑上的测试和预览工具，**不要拷**。）
 3. **从 0.3.6 或更早升级：删除 `koreader/plugins/simpleui.koplugin/`**（0.3.7 起不再使用 SimpleUI；残留也不会出错，但会多一套无用菜单）。如需清理，可一并删除 `koreader/settings/simpleui/`。
-4. 安全弹出 → KUAL 启动 KOReader → 插件管理确认「Real微读」已勾选，版本 0.3.8。
+4. 安全弹出 → KUAL 启动 KOReader → 插件管理确认「Real微读」已勾选，版本 0.4.5。
 5. 首次使用需在 ☰ Real微读 → 微信读书功能 里扫码登录（已登录过的保持登录）；确保打开过一次书架（联网），让它缓存书架和封面——本插件只显示这份缓存。
 
 启动 KOReader 后**直接进入 Real微读**（装好即开启，无需任何设置）。第一次使用在书架点「导入」或 我 → 书架同步。

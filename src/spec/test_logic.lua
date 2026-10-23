@@ -137,4 +137,16 @@ do
     end
 end
 
+-- 0.6.5: one cover grid for 最近阅读 / ranking / 为你推荐 (numeric)
+for _, case in ipairs({ { 1236, 45, 1340, 560 }, { 1236, 45, 1340, 300 }, { 1072, 39, 1300, 520 }, { 758, 28, 900, 380 }, { 1236, 45, 900, 560 } }) do
+    local W, m, avail, fixed = case[1], case[2], case[3], case[4]
+    local G = L.home_grid(W, m, avail, fixed, 3, 4, 20, 30)
+    local steps_equal = true
+    for i = 2, 5 do if G.xs[i] - G.xs[i - 1] ~= G.cw + G.gap then steps_equal = false end end
+    local tag = string.format("%dx%d fixed %d: cw=%d ch=%d gap=%d", W, avail, fixed, G.cw, G.ch, G.gap)
+    check("grid left edge = margin " .. tag, G.xs[1] == m)
+    check("grid right edge = W - margin " .. tag, G.xs[5] + G.cw == W - m)
+    check("grid integer, identical steps " .. tag, G.gap == math.floor(G.gap) and steps_equal and G.gap >= 0)
+    check("grid fits height " .. tag, fixed + 3 * G.ch + 4 * G.vgap <= avail or G.vgap == 20)
+end
 print(string.format("\n%d checks, %d failed", n, fails)); os.exit(fails == 0 and 0 or 1)

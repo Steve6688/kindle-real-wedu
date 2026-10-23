@@ -4,14 +4,29 @@
 -- actual on-disk format, not a guess.
 local here = arg[0]:match("^(.*)/[^/]+$") or "."
 local deps = here .. "/.deps"
+-- 0.6.5: standalone fallbacks when spec/.deps is absent (it is git-ignored):
+-- weread from the repo's tracked vendor/weread.koplugin, koreader-base ffi +
+-- json from a KOReader install (KOREADER_DIR, default: the emulator / the
+-- directory of the luajit running this test).
+local ko = os.getenv("KOREADER_DIR")
+if not ko then
+    local exe = arg and arg[-1]
+    local d = exe and exe:match("^(.*)/[^/]+$")
+    if d and io.open(d .. "/ffi/posix_h.lua") then ko = d else ko = "/tmp/kor/lib/koreader" end
+end
+local vendor = here .. "/../../vendor/weread.koplugin"
 package.path = table.concat({
     here .. "/../realweidu.koplugin/?.lua",
     deps .. "/weread/?.lua",
     deps .. "/kb/?.lua",
     deps .. "/kb/thirdparty/?.lua",
     deps .. "/?.lua",
+    vendor .. "/?.lua",
+    ko .. "/?.lua",
+    ko .. "/common/?.lua",
     package.path,
 }, ";")
+package.cpath = ko .. "/common/?.so;" .. ko .. "/libs/?.so;" .. package.cpath
 
 local ffi = require("ffi")
 ffi.loadlib = ffi.loadlib or function(name, ver) return ffi.load("lib" .. name .. ".so." .. ver) end

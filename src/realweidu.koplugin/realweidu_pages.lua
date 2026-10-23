@@ -146,28 +146,37 @@ function Discover:build(g)
     local recent = Logic.recent(self.books, 4)
     local title = U.text("最近阅读", U.px(40), true)
     place(g, title, m, y + U.px(10)); y = y + math.max(U.px(90), title:getSize().h + U.px(20))
-    local gap = U.px(30)
-    local cw = math.floor((W - 2 * m - 4 * gap) / 5)
-    local ch = math.floor(cw * 280 / 200)
-    local name_px = U.px(28)
+    -- 0.6.5: one grid for all three rows
+    local name_px = U.px(26)
+    local name_h = math.floor(name_px * 1.45)
+    local row_extra = U.px(8) + name_h
+    local fixed = y + Discover.TAB_H() + Discover.HDR_H() + 3 * row_extra
+    local G = Logic.home_grid(W, m, self.avail, fixed, 3, 4, U.px(20), U.px(30))
+    self.grid, self.name_px = G, name_px
+    local cw, ch = G.cw, G.ch
+    self.recent_rects = {}
     if #recent == 0 then
         local t = U.text("还没有阅读记录。去书架打开一本书吧。", U.px(30))
-        place(g, t, m, y); y = y + U.px(80)
+        place(g, t, m, y + math.floor((ch - t:getSize().h) / 2))
     else
         for i, b in ipairs(recent) do
-            local x = m + (i - 1) * (cw + gap)
-            place(g, U.cover(b.cover, b.title, cw, ch, name_px), x, y)
-            place(g, U.textbox(b.title, name_px, cw, math.floor(name_px * 1.45), true), x, y + ch + U.px(10))
-            self:hit(rect(x, y, cw, ch + U.px(60)), function() if self.on_open then self.on_open(b) end end)
+            local x = G.xs[i]
+            place(g, U.cover(b.cover, b.title, cw, ch, U.px(24)), x, y)
+            place(g, U.textbox(b.title, name_px, cw, name_h, true), x, y + ch + U.px(8))
+            self.recent_rects[i] = rect(x, y, cw, ch)
+            self:hit(rect(x, y, cw, ch + row_extra), function() if self.on_open then self.on_open(b) end end)
         end
-        local x = m + 4 * (cw + gap)
+        local x = G.xs[5]
         place(g, FrameContainer:new{ bordersize = 1, color = U.GRAY, background = U.WHITE, padding = 0, margin = 0,
             CenterContainer:new{ dimen = Geom:new{ w = cw - 2, h = ch - 2 }, U.text("全部 ›", U.px(32), true) } }, x, y)
-        self:hit(rect(x, y, cw, ch + U.px(60)), function() if self.on_all then self.on_all() end end)
-        y = y + ch + U.px(10) + math.floor(name_px * 1.45) + U.px(24)
+        self.recent_rects[5] = rect(x, y, cw, ch)
+        self:hit(rect(x, y, cw, ch + row_extra), function() if self.on_all then self.on_all() end end)
     end
+    y = y + ch + row_extra + G.vgap
     self:build_weread(g, y)
 end
+function Discover.TAB_H() return math.max(U.px(84), 84) end
+function Discover.HDR_H() return math.max(U.px(80), 80) end
 
 -- 0.6.4: 「微信读书」 block = ranking tabs, ONE row of 5 covers of the selected
 -- ranking, then 「为你推荐」 (+ 换一批) with ONE row of 5 covers. Same 5-column
@@ -181,12 +190,11 @@ function Discover:cover_row(g, y, books, cw, ch, name_px, empty_text)
     self.cover_rects = self.cover_rects or {}
     for i = 1, math.min(5, #books) do
         local b = books[i]
-        local x = m + math.floor((i - 1) * (W - 2 * m - cw) / 4) -- edges flush with the margins
+        local x = self.grid.xs[i] -- 0.6.5: shared grid
         place(g, U.cover(b.cover_file, b.title, cw, ch, U.px(24)), x, y)
         place(g, U.textbox(b.title, name_px, cw, name_h, true), x, y + ch + U.px(8))
-        local r = rect(x, y, cw, ch + U.px(8) + name_h)
-        self.cover_rects[#self.cover_rects + 1] = r
-        self:hit(r, function() if self.on_book then self.on_book(b) end end)
+        self.cover_rects[#self.cover_rects + 1] = rect(x, y, cw, ch) -- cover box (layout checks)
+        self:hit(rect(x, y, cw, ch + U.px(8) + name_h), function() if self.on_book then self.on_book(b) end end)
     end
     return y + ch + U.px(8) + name_h
 end
@@ -197,7 +205,7 @@ function Discover:build_weread(g, y)
     if not R then return y end
     self.cover_rects = {}
     -- tabs (the block's header): bold + underline on the selected one
-    local tab_h = math.max(U.px(84), 84)
+    local tab_h = Discover.TAB_H()
     local tw = math.floor((W - 2 * m) / #R.TABS)
     self.tab_rects = {}
     for i, tab in ipairs(R.TABS) do
@@ -214,18 +222,10 @@ function Discover:build_weread(g, y)
     end
     y = y + tab_h
     place(g, U.hline(W - 2 * m, 1), m, y)
-    -- sizes: same grid as 最近阅读, shrink if the page is short
-    local gap = U.px(30)
-    local cw0 = math.floor((W - 2 * m - 4 * gap) / 5)
-    local name_px = U.px(26)
-    local name_h = math.floor(name_px * 1.45)
-    local hdr_h = math.max(U.px(80), 80)
-    local fixed = hdr_h + 2 * (U.px(8) + name_h)
-    local left = self.avail - y
-    local min_gap = U.px(20)
-    local ch = math.min(math.floor(cw0 * 280 / 200), math.floor((left - fixed - 3 * min_gap) / 2))
-    local cw = math.min(cw0, math.floor(ch * 200 / 280))
-    local vgap = math.max(min_gap, math.floor((left - fixed - 2 * ch) / 3))
+    local G = self.grid
+    local cw, ch, vgap = G.cw, G.ch, G.vgap
+    local name_px = self.name_px
+    local hdr_h = Discover.HDR_H()
     self.rank_layout = { ch = ch, cw = cw, vgap = vgap }
     y = y + vgap
     local books, loaded = R.rank_books()

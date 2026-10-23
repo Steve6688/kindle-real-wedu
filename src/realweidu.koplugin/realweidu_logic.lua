@@ -381,4 +381,22 @@ function M.light_frac(v, lo, hi)
     if not v or not lo or not hi or hi <= lo then return 0 end
     return math.max(0, math.min(1, (v - lo) / (hi - lo)))
 end
+-- 0.6.5: ONE cover grid for all three home rows (最近阅读 / ranking / 为你推荐):
+-- same width, same gap, edges flush with both margins. `fixed` = all
+-- non-cover height of the page, `rows` = cover rows, `slots` = vertical gaps.
+function M.home_grid(W, m, avail, fixed, rows, slots, min_gap, min_col_gap)
+    local inner = W - 2 * m
+    local cw = math.floor((inner - 4 * min_col_gap) / 5)
+    local ch = math.floor(cw * 280 / 200)
+    local fit = math.floor((avail - fixed - slots * min_gap) / rows)
+    if fit < ch then ch = fit; cw = math.min(cw, math.floor(ch * 200 / 280)) end
+    cw = cw - ((cw - inner) % 4)          -- (inner - cw) % 4 == 0: integer gap, identical steps
+    ch = math.min(ch, math.floor(cw * 280 / 200))
+    local gap = math.floor((inner - 5 * cw) / 4)
+    local xs = {}
+    for i = 1, 5 do xs[i] = m + (i - 1) * (cw + gap) end
+    local vgap = math.max(min_gap, math.floor((avail - fixed - rows * ch) / slots))
+    return { cw = cw, ch = ch, gap = gap, xs = xs, vgap = vgap }
+end
+
 return M

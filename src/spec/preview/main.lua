@@ -638,12 +638,21 @@ function H:init()
                     if pg and pg.cover_rects and pg.rank_layout then
                         local m = U.px(45)
                         local rows = {}
+                        for _, r in ipairs(pg.recent_rects or {}) do
+                            rows[r.y] = rows[r.y] or {}; table.insert(rows[r.y], r)
+                        end
                         for _, r in ipairs(pg.cover_rects) do
                             rows[r.y] = rows[r.y] or {}
                             table.insert(rows[r.y], r)
                         end
                         local ys = {}
+                        local sig0
                         for y0, rr in pairs(rows) do
+                            local sig = {}
+                            for _, r in ipairs(rr) do sig[#sig + 1] = r.x .. "+" .. r.w .. "x" .. r.h end -- cover boxes only
+                            sig = table.concat(sig, ",")
+                            if sig0 and sig ~= sig0 then bad = bad + 1; log("  row geometry differs: %s vs %s", sig, sig0) end
+                            sig0 = sig0 or sig
                             ys[#ys + 1] = y0
                             local first, last = rr[1], rr[#rr]
                             local gaps = {}
@@ -652,10 +661,12 @@ function H:init()
                             for k = 2, #gaps do if math.abs(gaps[k] - gaps[1]) > 1 then even = false end end
                             local ok = #rr == 5 and first.x == m and last.x + last.w == W - m and even
                             if not ok then bad = bad + 1 end
-                            log("  row y=%d n=%d left=%d right=%d step=%s even=%s %s", y0, #rr, first.x, last.x + last.w,
-                                tostring(gaps[1]), tostring(even), ok and "OK" or "BAD")
+                            log("  row y=%d n=%d w=%d left=%d right=%d gap=%s even=%s %s", y0, #rr, first.w, first.x, last.x + last.w,
+                                tostring(gaps[1] - first.w), tostring(even), ok and "OK" or "BAD")
                         end
                         local L = pg.rank_layout
+                        local nrows = 0; for _ in pairs(rows) do nrows = nrows + 1 end
+                        if nrows ~= 3 then bad = bad + 1; log("  expected 3 cover rows, got %d", nrows) end
                         log("  cover %dx%d vgap=%d weread_bottom=%d avail=%d tab=%d", L.cw, L.ch, L.vgap, pg.weread_bottom, pg.avail, R.tab)
                         if pg.weread_bottom > pg.avail then bad = bad + 1; log("  overlaps nav!") end
                     end
@@ -673,24 +684,58 @@ function H:init()
                 add("05-selected-tab-full-list", function() tap(ctr(disc(), disc().tab_rects[4])) end)
                 add("06-nav-discover", function() local pg = top(); tap(math.floor(W * 0.3), pg.top + pg.avail + math.floor(pg.nav_h / 2)) end)
                 add("07-nav-me", function() local pg = top(); tap(math.floor(W * 0.62), pg.top + pg.avail + math.floor(pg.nav_h / 2)) end)
-                add("08-me-settings", function() local pg = top(); tap(ctr(pg, pg.row_rects["阅读设置"])) end)
-                add("09-sleep-dialog", function()
-                    local b = find_button("自动休眠"); log("  before: setting=%s", tostring(G_reader_settings:readSetting("auto_suspend_timeout_seconds")))
-                    tap(b.dimen.x + math.floor(b.dimen.w / 2), b.dimen.y + math.floor(b.dimen.h / 2)) end)
-                add("10-sleep-30min", function()
-                    local b = find_button("30 分钟")
-                    tap(b.dimen.x + math.floor(b.dimen.w / 2), b.dimen.y + math.floor(b.dimen.h / 2)) end)
-                add("11-sleep-saved", function()
+                local function timer_left()
+                    local inst = P._autosuspend_instance()
+                    local tm = require("ui/time")
+                    -- the plugin queues inst.task twice (suspend check + 3-day shutdown); the suspend one is the nearest
+                    local best
+                    for _, e in ipairs(UIManager._task_queue) do
+                        if inst and e.action == inst.task then
+                            local left = tm.to_number(e.time - UIManager:getTime())
+                            if not best or left < best then best = left end
+                        end
+                    end
+                    return best
+                end
+                local function tap_button(label)
+                    local b = find_button(label)
+                    if not b then fails = fails + 1; log("  button %s not found", label); return end
+                    tap(b.dimen.x + math.floor(b.dimen.w / 2), b.dimen.y + math.floor(b.dimen.h / 2))
+                end
+                local function assert_sleep(expect)
                     local inst = P._autosuspend_instance()
                     local v = G_reader_settings:readSetting("auto_suspend_timeout_seconds")
-                    log("  after: setting=%s live_plugin=%s live_value=%s", tostring(v), tostring(inst ~= nil), tostring(inst and inst.auto_suspend_timeout_seconds))
-                    if v ~= 1800 then fails = fails + 1 end
+                    local live = inst and inst.auto_suspend_timeout_seconds
+                    local left = timer_left()
+                    local ok = v == expect and live == expect and left and left <= expect and left > expect - 5
+                    if not ok then fails = fails + 1 end
+                    log("  ASSERT sleep: setting=%s live=%s timer_left=%s expect=%d -> %s", tostring(v), tostring(live),
+                        left and string.format("%.1f", left) or "nil", expect, ok and "PASS" or "FAIL")
+                end
+                local function close_infos()
                     for i = #UIManager._window_stack, 1, -1 do
                         local w = UIManager._window_stack[i].widget
                         if w.text and not w.g then UIManager:close(w) end
                     end
-                    P.showSettingsDialog()
-                end)
+                end
+                local function start_from(sec)
+                    P.setSleepTimeout(sec)
+                    log("  start value: setting=%s live=%s timer_left=%s", tostring(G_reader_settings:readSetting("auto_suspend_timeout_seconds")),
+                        tostring(P._autosuspend_instance() and P._autosuspend_instance().auto_suspend_timeout_seconds),
+                        tostring(timer_left() and math.floor(timer_left())))
+                end
+                add("08-start-30min-open-settings", function()
+                    start_from(1800)
+                    local pg = top(); tap(ctr(pg, pg.row_rects["阅读设置"])) end)
+                add("09-sleep-dialog", function() tap_button("自动休眠：30 分钟") end)
+                add("10-select-10min", function() tap_button("10 分钟") end)
+                add("11-assert-600", function() assert_sleep(600); close_infos() end)
+                add("12-start-15min-open-settings", function()
+                    start_from(900)
+                    local pg = top(); tap(ctr(pg, pg.row_rects["阅读设置"])) end)
+                add("13-sleep-dialog", function() tap_button("自动休眠：15 分钟") end)
+                add("14-select-1h", function() tap_button("1 小时") end)
+                add("15-assert-3600", function() assert_sleep(3600); close_infos(); P.showSettingsDialog() end)
                 local k = 0
                 local function run()
                     k = k + 1

@@ -39,8 +39,10 @@ end
 function Page:refresh(no_dirty)
     if self.frame[1] and self.frame[1].free then self.frame[1]:free() end
     self.hits = {}
+    self.row_rects = {}
     local g = OverlapGroup:new{ dimen = Geom:new{ w = self.W, h = self.avail + self.nav_h } }
     self:build(g)
+    self.g = g -- 0.6.4: kept for layout/bounds checks
     if self.own_nav then
         -- 0.3.3-style bar: 〈 发现 书架 我 〉 (arrows inactive on these pages)
         place(g, U.bottom_nav(self.nav_active, self.W, false, false), 0, self.avail)
@@ -83,6 +85,8 @@ function Page:row(g, y, text, fn, bold)
     place(g, U.icon("chevron_right", ic), self.W - m - ic, y + math.floor((h - ic) / 2))
     place(g, U.hline(self.W - 2 * m, 1), m, y + h - 1)
     self:hit(rect(0, y, self.W, h), fn)
+    self.row_rects = self.row_rects or {}
+    self.row_rects[text] = rect(0, y, self.W, h)
     return y + h
 end
 
@@ -165,54 +169,84 @@ function Discover:build(g)
     self:build_weread(g, y)
 end
 
--- 0.6.3: 「微信读书」 = one row per ranking (name ›, 4 covers side by side).
--- Tapping a ranking name opens that whole ranking; 「换一批」 shifts every row.
+-- 0.6.4: 「微信读书」 block = ranking tabs, ONE row of 5 covers of the selected
+-- ranking, then 「为你推荐」 (+ 换一批) with ONE row of 5 covers. Same 5-column
+-- grid as 最近阅读; leftover height is split evenly between the rows.
+function Discover:cover_row(g, y, books, cw, ch, name_px, empty_text)
+    local W, m = self.W, U.px(45)
+    local name_h = math.floor(name_px * 1.45)
+    if #books == 0 then
+        place(g, U.text(empty_text, U.px(30)), m, y + math.floor((ch - U.px(30)) / 2))
+    end
+    self.cover_rects = self.cover_rects or {}
+    for i = 1, math.min(5, #books) do
+        local b = books[i]
+        local x = m + math.floor((i - 1) * (W - 2 * m - cw) / 4) -- edges flush with the margins
+        place(g, U.cover(b.cover_file, b.title, cw, ch, U.px(24)), x, y)
+        place(g, U.textbox(b.title, name_px, cw, name_h, true), x, y + ch + U.px(8))
+        local r = rect(x, y, cw, ch + U.px(8) + name_h)
+        self.cover_rects[#self.cover_rects + 1] = r
+        self:hit(r, function() if self.on_book then self.on_book(b) end end)
+    end
+    return y + ch + U.px(8) + name_h
+end
+
 function Discover:build_weread(g, y)
     local W, m = self.W, U.px(45)
     local R = self.rank
-    local t = U.text("微信读书", U.px(40), true)
-    place(g, t, m, y + U.px(6))
-    local sw = U.text("换一批 ↻", U.px(32), true)
-    local hh = t:getSize().h + U.px(22)
-    place(g, sw, W - m - sw:getSize().w, y + math.floor((hh - sw:getSize().h) / 2))
-    self:hit(rect(W - m - sw:getSize().w - U.px(40), y, sw:getSize().w + U.px(80), hh),
-        function() if self.on_more then self.on_more() end end)
-    y = y + hh
     if not R then return y end
-    if not R.any_loaded() then
-        local msg = U.text(self.rank_error and ("榜单加载失败：" .. self.rank_error .. "（点此重试）") or "正在加载榜单…", U.px(30))
-        place(g, msg, m, y + U.px(20))
-        self:hit(rect(0, y, W, U.px(100)), function() if self.on_reload then self.on_reload() end end)
-        return y + U.px(100)
+    self.cover_rects = {}
+    -- tabs (the block's header): bold + underline on the selected one
+    local tab_h = math.max(U.px(84), 84)
+    local tw = math.floor((W - 2 * m) / #R.TABS)
+    self.tab_rects = {}
+    for i, tab in ipairs(R.TABS) do
+        local x = m + (i - 1) * tw
+        local on = i == R.tab
+        local lbl = U.text(tab.name, U.px(34), on)
+        place(g, lbl, x + math.floor((tw - lbl:getSize().w) / 2), y + math.floor((tab_h - lbl:getSize().h) / 2))
+        if on then place(g, U.hline(math.floor(tw * 0.5), U.px(6)), x + math.floor(tw * 0.25), y + tab_h - U.px(6)) end
+        self.tab_rects[i] = rect(x, y, tw, tab_h)
+        self:hit(self.tab_rects[i], function()
+            -- tap another tab: switch the row; tap the selected tab again: whole ranking
+            if on and self.on_rank then self.on_rank(i) elseif self.on_tab then self.on_tab(i) end
+        end)
     end
-    local name_h = math.max(U.px(64), 64)
+    y = y + tab_h
+    place(g, U.hline(W - 2 * m, 1), m, y)
+    -- sizes: same grid as 最近阅读, shrink if the page is short
     local gap = U.px(30)
+    local cw0 = math.floor((W - 2 * m - 4 * gap) / 5)
+    local name_px = U.px(26)
+    local name_h = math.floor(name_px * 1.45)
+    local hdr_h = math.max(U.px(80), 80)
+    local fixed = hdr_h + 2 * (U.px(8) + name_h)
     local left = self.avail - y
-    local n = #R.TABS
-    local min_ch = U.px(150)
-    while n > 1 and math.floor(left / n) - name_h - U.px(18) < min_ch do n = n - 1 end
-    local ch = math.min(U.px(260), math.floor(left / n) - name_h - U.px(18))
-    local cw = math.min(math.floor(ch * 200 / 280), math.floor((W - 2 * m - 3 * gap) / 4))
-    local cgap = math.floor((W - 2 * m - 4 * cw) / 3)
-    self.rank_rows = {}
-    for i = 1, n do
-        local tab = R.TABS[i]
-        local nt = U.text(tab.name .. " ›", U.px(34), true)
-        place(g, nt, m, y + math.floor((name_h - nt:getSize().h) / 2))
-        self:hit(rect(0, y, W, name_h), function() if self.on_rank then self.on_rank(i) end end)
-        y = y + name_h
-        local row = R.row_books(i)
-        if #row == 0 then
-            place(g, U.text(R.list(i) and "暂无数据" or "加载失败", U.px(28)), m, y + U.px(10))
-        end
-        for k, b in ipairs(row) do
-            local x = m + (k - 1) * (cw + cgap)
-            place(g, U.cover(b.cover_file, b.title, cw, ch, U.px(24)), x, y)
-            self:hit(rect(x, y, cw, ch), function() if self.on_book then self.on_book(b) end end)
-        end
-        self.rank_rows[i] = rect(m, y, W - 2 * m, ch)
-        y = y + ch + U.px(18)
+    local min_gap = U.px(20)
+    local ch = math.min(math.floor(cw0 * 280 / 200), math.floor((left - fixed - 3 * min_gap) / 2))
+    local cw = math.min(cw0, math.floor(ch * 200 / 280))
+    local vgap = math.max(min_gap, math.floor((left - fixed - 2 * ch) / 3))
+    self.rank_layout = { ch = ch, cw = cw, vgap = vgap }
+    y = y + vgap
+    local books, loaded = R.rank_books()
+    local empty = self.rank_error and ("榜单加载失败（点此重试）") or (loaded and "暂无榜单数据" or "正在加载榜单…")
+    local ry = y
+    y = self:cover_row(g, y, books, cw, ch, name_px, empty)
+    if #books == 0 then
+        self:hit(rect(0, ry, W, ch), function() if self.on_reload then self.on_reload() end end)
     end
+    y = y + vgap
+    -- 为你推荐 + 换一批
+    local rt = U.text("为你推荐", U.px(36), true)
+    place(g, rt, m, y + math.floor((hdr_h - rt:getSize().h) / 2))
+    local sw = U.text("换一批 ↻", U.px(32), true)
+    local swx = W - m - sw:getSize().w
+    place(g, sw, swx, y + math.floor((hdr_h - sw:getSize().h) / 2))
+    self.more_rect = rect(swx - U.px(40), y, sw:getSize().w + U.px(40) + m, hdr_h)
+    self:hit(self.more_rect, function() if self.on_more then self.on_more() end end)
+    y = y + hdr_h
+    y = self:cover_row(g, y, R.batch(), cw, ch, name_px, loaded and "暂无推荐" or "正在加载推荐…")
+    self.weread_bottom = y
     return y
 end
 

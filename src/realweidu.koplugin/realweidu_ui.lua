@@ -135,8 +135,8 @@ function U.bottom_nav(active, width, has_prev, has_next)
     return FrameContainer:new{ bordersize = 0, padding = 0, margin = 0, background = U.WHITE,
         width = width, height = h,
         VerticalGroup:new{ align = "left",
+            VerticalSpan:new{ width = drop }, -- 0.6.4: the divider moves down with the icons
             FrameContainer:new{ bordersize = 0, padding = 0, margin = 0, height = U.px(10), width = width, marker },
-            VerticalSpan:new{ width = drop },
             cells,
         },
     }

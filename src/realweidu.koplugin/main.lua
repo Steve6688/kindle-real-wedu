@@ -157,7 +157,7 @@ local function S() return RealWeidu._settings_override or settings() end
 local function on(key) return S():readSetting(key) ~= false end
 RealWeidu.isOn = on
 RealWeidu.ENTER_TEXT = "进入 Real微读"
-RealWeidu.VERSION = "0.6.3"
+RealWeidu.VERSION = "0.6.4"
 
 -- Put 「进入 Real微读」 at the top of KOReader's ☰ (main) menu tab instead of
 -- after Exit (items missing from the order table are appended at the end).
@@ -576,7 +576,66 @@ function RealWeidu.settingsItems()
             info("已保存，重启 KOReader 后生效。") end },
         { text = mark("smooth_turns") .. "流畅翻页（无动画 · 每 12 页全刷）", fn = function()
             RealWeidu.toggleSetting("smooth_turns") end },
+        { text = "自动休眠：" .. RealWeidu.sleepLabel(RealWeidu.getSleepTimeout()) .. " ›",
+            fn = function() RealWeidu.showSleepDialog() end },
     }
+end
+
+-- 0.6.4 自动休眠 (screen off / sleep after inactivity): front-end for KOReader's
+-- own autosuspend plugin (same setting key; live instance re-armed, no KOReader edits).
+RealWeidu.SLEEP_KEY = "auto_suspend_timeout_seconds"
+RealWeidu.SLEEP_CHOICES = { 5 * 60, 10 * 60, 15 * 60, 30 * 60, 60 * 60, -1 }
+function RealWeidu.sleepLabel(sec)
+    if not sec or sec <= 0 then return "从不" end
+    if sec % 3600 == 0 then return math.floor(sec / 3600) .. " 小时" end
+    return math.floor(sec / 60) .. " 分钟"
+end
+local function autosuspend_instance()
+    for _, path in ipairs({ "apps/reader/readerui", "apps/filemanager/filemanager" }) do
+        local ok, M = pcall(require, path)
+        local ui = ok and M and M.instance
+        if ui and ui.autosuspend then return ui.autosuspend end
+    end
+end
+RealWeidu._autosuspend_instance = autosuspend_instance
+function RealWeidu.getSleepTimeout()
+    local inst = autosuspend_instance()
+    if inst and inst.auto_suspend_timeout_seconds then return inst.auto_suspend_timeout_seconds end
+    if not G_reader_settings then return 15 * 60 end
+    return G_reader_settings:readSetting(RealWeidu.SLEEP_KEY, 15 * 60)
+end
+function RealWeidu.setSleepTimeout(sec)
+    if G_reader_settings then G_reader_settings:saveSetting(RealWeidu.SLEEP_KEY, sec) end
+    local inst = autosuspend_instance()
+    if inst then
+        inst.auto_suspend_timeout_seconds = sec
+        pcall(function()
+            if inst._unschedule then inst:_unschedule() end
+            if inst._unschedule_kindle then inst:_unschedule_kindle() end
+            inst.last_action_time = UIManager:getElapsedTimeSinceBoot()
+            if inst._start then inst:_start() end
+            if inst._start_kindle then inst:_start_kindle() end
+        end)
+    end
+    return inst ~= nil
+end
+function RealWeidu.showSleepDialog()
+    local ButtonDialog = require("ui/widget/buttondialog")
+    local cur = RealWeidu.getSleepTimeout()
+    local dlg
+    local buttons = {}
+    for _, sec in ipairs(RealWeidu.SLEEP_CHOICES) do
+        local cur_on = (sec <= 0 and (cur or 0) <= 0) or sec == cur
+        buttons[#buttons + 1] = { { text = (cur_on and "✓ " or "　") .. RealWeidu.sleepLabel(sec), callback = function()
+            UIManager:close(dlg)
+            local live = RealWeidu.setSleepTimeout(sec)
+            info("自动休眠：" .. RealWeidu.sleepLabel(sec) .. (live and "" or "\n（KOReader 自动休眠插件未启用，重启后生效）"))
+        end } }
+    end
+    dlg = ButtonDialog:new{ title = "无操作后自动休眠（息屏）", buttons = buttons }
+    RealWeidu._sleep_dialog = dlg
+    UIManager:show(dlg)
+    return dlg
 end
 -- 0.3.7 name kept for callers
 RealWeidu.moreSettingsItems = RealWeidu.settingsItems
@@ -826,8 +885,11 @@ function RealWeidu.showDiscover()
     end
     local page = Pages.Discover:new{
         books = books, rank = Rank, rank_error = RealWeidu._rank_error,
-        on_rank = function(i) RealWeidu.showRanking(i) end, -- 0.6.3
-        on_more = function() Rank.shift_rows(); RealWeidu._discover_page:refresh(); load(false) end,
+        on_rank = function(i) RealWeidu.showRanking(i) end, -- 0.6.3 (full list)
+        on_tab = function(i) Rank.set_tab(i); RealWeidu._discover_page:refresh(); load(false) end, -- 0.6.4
+        on_more = function()
+            Rank.next_batch() -- 0.6.4: 为你推荐 next 5
+            RealWeidu._discover_page:refresh(); load(false) end,
         on_reload = function() load(true) end,
         on_book = function(b)
             local ok = Data.open_book(weread, b.bookId)

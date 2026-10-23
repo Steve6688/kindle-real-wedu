@@ -284,7 +284,7 @@ do
     check("退出到 Kindle row is normal weight", ex and not ex.bold)
     local has_ko = false
     for _, it in ipairs(P.settingsItems()) do if it.text:find("KOReader 设置", 1, true) then has_ko = true end end
-    check("阅读设置 has no 「KOReader 设置」 row", not has_ko and #P.settingsItems() == 3)
+    check("阅读设置 has no 「KOReader 设置」 row", not has_ko and #P.settingsItems() == 4) -- 0.6.4: + 自动休眠
     local U = package.loaded["ui/uimanager"]
     local closed, quit = {}, false
     local oc, oq = U.close, U.quit

@@ -12,7 +12,7 @@ local M = {
         { id = "all",                         name = "总榜" },
     },
     RECOMMEND = "hot_search",   -- 「为你推荐」 source list
-    RANK_N = 5, REC_N = 4,
+    RANK_N = 5, REC_N = 5, -- 0.6.4: one row of 5 covers each
     tab = 1, rec_offset = 0,
     lists = {},                 -- [category] = { books, t }
     deps = {},
@@ -142,8 +142,9 @@ function M.row_books(i)
     return out
 end
 function M.shift_rows() M.shift = M.shift + 1 end
--- fetch every ranking (cached) + covers of the visible rows
-function M.load_all(client, dir, force)
+-- 0.6.4: home shows only the selected tab + 为你推荐 again -> load just those
+function M.load_all(client, dir, force) return M.load(client, dir, force) end
+function M.load_every_tab(client, dir, force)
     local first_err
     for i, t in ipairs(M.TABS) do
         if force or not M.lists[t.id] then
@@ -156,8 +157,7 @@ function M.load_all(client, dir, force)
     return first_err == nil, first_err
 end
 function M.any_loaded()
-    for _, t in ipairs(M.TABS) do if M.lists[t.id] then return true end end
-    return false
+    return M.lists[M.TABS[M.tab].id] ~= nil
 end
 
 return M

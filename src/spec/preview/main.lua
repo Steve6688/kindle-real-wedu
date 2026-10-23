@@ -575,7 +575,7 @@ function H:init()
                 UIManager:scheduleIn(2, shot)
             end)
             return
-        elseif MODE == "discover" or MODE == "discover2" or MODE == "discover3" then
+        elseif MODE == "discover" or MODE == "discover2" or MODE == "discover3" or MODE == "home064" then
             -- 0.6.2: WeRead rankings/recommendations (synthetic data; box has no WeRead login)
             local R = require("realweidu_rank")
             local names = { "平凡的世界","杀死一只知更鸟","小王子","蛤蟆先生去看心理医生","狂人日记","神的孩子全跳舞","漫游在雨中池塘","自卑与超越","海边的卡夫卡","我是落花生","厌女","追风筝的人" }
@@ -596,6 +596,118 @@ function H:init()
             local rec = list("rec", 12)
             for i = 1, #rec do rec[i] = list("rec", 12)[((i + 4) % 12) + 1] end
             R.lists[R.RECOMMEND .. ":0"] = { books = rec }
+            if MODE == "home064" then
+                R.lists[R.RECOMMEND .. ":12"] = { books = list("rec2", 12) }
+                for i = 1, 12 do R.lists[R.RECOMMEND .. ":12"].books[i] = list("rec2", 12)[((i + 8) % 12) + 1] end
+                local Event, Geom = require("ui/event"), require("ui/geometry")
+                local U = require("realweidu_ui")
+                local W, H = Screen:getWidth(), Screen:getHeight()
+                local dir = os.getenv("WSPREV_DIR") or "/tmp/korprev"
+                local fails = 0
+                local function log(...) io.stderr:write("WSPREV064 " .. string.format(...) .. "\n") end
+                local function tap(x, y)
+                    log("  tap %d,%d", x, y)
+                    UIManager:sendEvent(Event:new("Gesture", { ges = "tap", pos = Geom:new{ x = x, y = y, w = 0, h = 0 } }))
+                end
+                local function top() local st = UIManager._window_stack; return st[#st] and st[#st].widget end
+                local function ctr(page, r) return r.x + math.floor(r.w / 2), page.top + r.y + math.floor(r.h / 2) end
+                local function find_button(label)
+                    for i = #UIManager._window_stack, 1, -1 do
+                        local w = UIManager._window_stack[i].widget
+                        local bt = w.buttontable
+                        if bt then
+                            for _, line in ipairs(bt.buttons_layout or {}) do
+                                for _, b in ipairs(line) do
+                                    if b.text and b.text:find(label, 1, true) and b.dimen then return b end
+                                end
+                            end
+                        end
+                    end
+                end
+                local function check(name)
+                    local pg = top()
+                    local bad = 0
+                    if pg and pg.g then
+                        for _, c in ipairs(pg.g) do
+                            local o, sz = c.overlap_offset or { 0, 0 }, c:getSize()
+                            if o[1] < 0 or o[2] < 0 or o[1] + sz.w > W or pg.top + o[2] + sz.h > H then
+                                bad = bad + 1; log("  OOB at %d,%d size %dx%d", o[1], o[2], sz.w, sz.h)
+                            end
+                        end
+                    end
+                    if pg and pg.cover_rects and pg.rank_layout then
+                        local m = U.px(45)
+                        local rows = {}
+                        for _, r in ipairs(pg.cover_rects) do
+                            rows[r.y] = rows[r.y] or {}
+                            table.insert(rows[r.y], r)
+                        end
+                        local ys = {}
+                        for y0, rr in pairs(rows) do
+                            ys[#ys + 1] = y0
+                            local first, last = rr[1], rr[#rr]
+                            local gaps = {}
+                            for k = 2, #rr do gaps[#gaps + 1] = rr[k].x - rr[k - 1].x end
+                            local even = true
+                            for k = 2, #gaps do if math.abs(gaps[k] - gaps[1]) > 1 then even = false end end
+                            local ok = #rr == 5 and first.x == m and last.x + last.w == W - m and even
+                            if not ok then bad = bad + 1 end
+                            log("  row y=%d n=%d left=%d right=%d step=%s even=%s %s", y0, #rr, first.x, last.x + last.w,
+                                tostring(gaps[1]), tostring(even), ok and "OK" or "BAD")
+                        end
+                        local L = pg.rank_layout
+                        log("  cover %dx%d vgap=%d weread_bottom=%d avail=%d tab=%d", L.cw, L.ch, L.vgap, pg.weread_bottom, pg.avail, R.tab)
+                        if pg.weread_bottom > pg.avail then bad = bad + 1; log("  overlaps nav!") end
+                    end
+                    if bad > 0 then fails = fails + 1 end
+                    log("step %s: top=%s bad=%d", name, tostring(pg and (pg.name or pg.title)), bad)
+                end
+                local steps = {}
+                local function add(name, fn) steps[#steps + 1] = { name = name, fn = fn } end
+                local function disc() return P._discover_page end
+                add("00-home", function() end)
+                add("01-tab-potential", function() tap(ctr(disc(), disc().tab_rects[2])) end)
+                add("02-tab-newbook", function() tap(ctr(disc(), disc().tab_rects[4])) end)
+                add("03-more-1", function() tap(ctr(disc(), disc().more_rect)) end)
+                add("04-more-2", function() tap(ctr(disc(), disc().more_rect)) end)
+                add("05-selected-tab-full-list", function() tap(ctr(disc(), disc().tab_rects[4])) end)
+                add("06-nav-discover", function() local pg = top(); tap(math.floor(W * 0.3), pg.top + pg.avail + math.floor(pg.nav_h / 2)) end)
+                add("07-nav-me", function() local pg = top(); tap(math.floor(W * 0.62), pg.top + pg.avail + math.floor(pg.nav_h / 2)) end)
+                add("08-me-settings", function() local pg = top(); tap(ctr(pg, pg.row_rects["阅读设置"])) end)
+                add("09-sleep-dialog", function()
+                    local b = find_button("自动休眠"); log("  before: setting=%s", tostring(G_reader_settings:readSetting("auto_suspend_timeout_seconds")))
+                    tap(b.dimen.x + math.floor(b.dimen.w / 2), b.dimen.y + math.floor(b.dimen.h / 2)) end)
+                add("10-sleep-30min", function()
+                    local b = find_button("30 分钟")
+                    tap(b.dimen.x + math.floor(b.dimen.w / 2), b.dimen.y + math.floor(b.dimen.h / 2)) end)
+                add("11-sleep-saved", function()
+                    local inst = P._autosuspend_instance()
+                    local v = G_reader_settings:readSetting("auto_suspend_timeout_seconds")
+                    log("  after: setting=%s live_plugin=%s live_value=%s", tostring(v), tostring(inst ~= nil), tostring(inst and inst.auto_suspend_timeout_seconds))
+                    if v ~= 1800 then fails = fails + 1 end
+                    for i = #UIManager._window_stack, 1, -1 do
+                        local w = UIManager._window_stack[i].widget
+                        if w.text and not w.g then UIManager:close(w) end
+                    end
+                    P.showSettingsDialog()
+                end)
+                local k = 0
+                local function run()
+                    k = k + 1
+                    local st = steps[k]
+                    if not st then log("DONE fails=%d", fails); UIManager:quit(); return end
+                    log("== %s", st.name)
+                    st.fn()
+                    UIManager:scheduleIn(1.2, function()
+                        Screen:shot(dir .. "/" .. st.name .. ".png")
+                        check(st.name)
+                        run()
+                    end)
+                end
+                P.showDiscover()
+                UIManager:scheduleIn(3, run)
+                return
+            end
             if MODE == "discover2" then P.showRanking(2) -- 0.6.3: tapping a ranking name
             else
                 if MODE == "discover3" then R.shift_rows() end -- 0.6.3: 换一批

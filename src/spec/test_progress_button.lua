@@ -46,10 +46,10 @@ check("unknown doc -> all —", i.pct_text == "—" and i.chapter_text == "—" 
 -- source-level: menu wiring
 local f = io.open(here .. "/../realweidu.koplugin/realweidu_readermenu.lua"); local src = f:read("*a"); f:close()
 check("middle button uses pct + card", src:find('draw = "pct",%s+fn = function%(%) self:toggleProgressCard%(%)') ~= nil)
-check("card uses partial ui refresh", src:find('self.progress_open = not self.progress_open\n    self:refresh%("ui"%)') ~= nil)
+check("card uses partial ui refresh", src:find('self.progress_open = not self.progress_open\n    if self.progress_open then self.bright_open = false end\n    self:refresh%("ui"%)') ~= nil)
 check("reads KOReader statistics", src:find("ui.statistics") ~= nil and src:find("avg_time = st.avg_time", 1, true) ~= nil)
 check("A button untouched", src:find('local name = self.font_open and "rm_font_active" or "rm_font"', 1, true) ~= nil)
-local blk = (src:match("%-%- 0%.4%.5 middle button(.-)function RM:showProgress") or ""):gsub("%-%-[^\n]*", "")
+local blk = (src:match("%-%- 0%.4%.5 middle button(.-)function RM:showBrightness%(") or ""):gsub("%-%-[^\n]*", "")
 check("card adds no animation/TTS code", #blk > 0 and not blk:find("[Aa]nimat") and not blk:find("TTS") and not blk:find("ReadAloud"))
 -- 0.4.6: card above slider / arrows; no 听 button
 check("card anchored above whole panel + float", src:find("self:_progressCard(g, H - (m.stats_h + m.slider_h + m.pills_h + m.icon_h + U.px(20)) - m.float_d - U.px(20))", 1, true) ~= nil)
@@ -74,8 +74,8 @@ check("_build uses classic bars only (no official panel/floats)", bld:find("_cla
     and not bld:find("self:_bottomBar", 1, true) and not bld:find("self:_topBar", 1, true))
 local cb = src:match("function RM:_classicBottomBar(.-)\nend") or ""
 check("classic bar draws no floats", #cb > 0 and not cb:find("_floatButtons", 1, true))
-check("bottom = ← ≡ progress -o- A", src:find('{ icon = "rm_back",       fn = "back" },\n    { icon = "rm_toc",        fn = "showTocSheet" }, %-%- 0.4.8: left sidebar TOC\n    { icon = "progress",      fn = "toggleProgressCard" }') ~= nil
-    and src:find('{ icon = "rm_brightness", fn = "showClassicBrightness" },\n    { icon = "rm_font",       fn = "toggleFont" },', 1, true) ~= nil)
+check("bottom = ← ≡ progress -o- A", src:find('{ icon = "rm_back",       fn = "back" },\n    { icon = "rm_toc",        fn = "showTocSheet" }, %-%- 0.4.8: left sidebar TOC\n    { icon = "progress",      fn = "toggleProgressCard" }') ~= nil and src:find('fn = "toggleBrightPanel"', 1, true) ~= nil
+    and src:find('{ icon = "rm_font",       fn = "toggleFont" },', 1, true) ~= nil)
 local tb = src:match("function RM:_classicTopBar(.-)\nend") or ""
 check("top = ‹ title | bookmark | more", tb:find("back_chevron", 1, true) and tb:find("bookmark_active", 1, true) and tb:find('U.icon("more"', 1, true))
 check("TOC tap outside sidebar closes", src:find("tap outside dismisses TOC", 1, true) and src:find("self.toc_rect = rect(0, 0, PW, H)", 1, true))
@@ -115,39 +115,28 @@ do
     check("open resets to current chapter page", src:find("self.toc_page = nil %-%- reopen on the current chapter's page") ~= nil)
     check("right blank strip still closes", src:find("tap outside dismisses TOC", 1, true) ~= nil)
 end
--- 0.5.0: 生词本 entry in ⋯ menu, other buttons unchanged
+-- 0.6.2: 生词本 / 查词模式 removed, 「同步进度」 added; no jump-to-progress
 do
     local more = src:match("function RM:showMore%(%)(.-)\nend\n") or ""
-    check("⋯ menu has 生词本", more:find('item("生词本", function() self:openVocabBuilder() end)', 1, true) ~= nil)
+    local f = io.open(here .. "/../realweidu.koplugin/main.lua"); local msrc = f:read("*a"); f:close()
+    check("⋯ menu has no 生词本 / 查词模式", not more:find("生词本", 1, true) and not more:find("查词模式", 1, true))
+    check("⋯ menu has 同步进度", more:find('item("同步进度", function() self:syncProgress() end)', 1, true) ~= nil)
     local n_items = select(2, more:gsub("\n%s+item%(", ""))
     local others = true
     for _, t in ipairs({ "书签列表", "下载并匹配划线/想法", "搜索全书", "书籍详情", "刷新屏幕", "KOReader 原生菜单", "添加书签" }) do
         if not more:find(t, 1, true) then others = false end
     end
-    check("⋯ menu keeps the other 7 items (+生词本 +查词模式 = 9)", n_items == 9 and others)
-    check("opens KOReader vocabbuilder", src:find('send(self.ui, "ShowVocabBuilder")', 1, true) ~= nil and src:find("self.ui.vocabbuilder", 1, true) ~= nil)
-    check("graceful when plugin disabled", src:find("生词本插件未启用", 1, true) ~= nil)
-    check("bottom bar unchanged", src:find('{ icon = "rm_brightness", fn = "showClassicBrightness" },\n    { icon = "rm_font",       fn = "toggleFont" },', 1, true) ~= nil)
-end
--- 0.5.0: 查词模式
-do
-    local E = L.LOOKUP_EDGE
-    check("edge strip default 12%", E == 0.12)
-    check("off -> always pass (tap-to-turn unchanged)", L.lookup_tap_action(false, 618, 1236) == "pass" and L.lookup_tap_action(nil, 618, 1236) == "pass")
-    check("on, centre -> lookup", L.lookup_tap_action(true, 618, 1236) == "lookup")
-    check("on, left strip -> pass", L.lookup_tap_action(true, 0, 1236) == "pass" and L.lookup_tap_action(true, 147, 1236) == "pass")
-    check("on, right strip -> pass", L.lookup_tap_action(true, 1235, 1236) == "pass" and L.lookup_tap_action(true, 1236 - 148, 1236) == "pass")
-    check("on, just inside strips -> lookup", L.lookup_tap_action(true, 148, 1236) == "lookup" and L.lookup_tap_action(true, 1236 - 149, 1236) == "lookup")
-    check("bad input -> pass", L.lookup_tap_action(true, nil, 1236) == "pass" and L.lookup_tap_action(true, 5, 0) == "pass")
-    local more = src:match("function RM:showMore%(%)(.-)\nend\n") or ""
-    check("⋯ menu has 查词模式 toggle", more:find("查词模式：开", 1, true) and more:find("查词模式：关", 1, true) and more:find("self:toggleLookupMode()", 1, true))
-    check("toggle persists in G_reader_settings", src:find("G:saveSetting(Logic.LOOKUP_SETTING, on)", 1, true) ~= nil and L.LOOKUP_SETTING == "realweidu_lookup_mode")
-    local f = io.open(here .. "/../realweidu.koplugin/main.lua"); local msrc = f:read("*a"); f:close()
-    check("reader registers lookup tap zone overriding page turn", msrc:find('id = "realweidu_lookup_tap"', 1, true) and msrc:find('"tap_forward", "tap_backward"', 1, true))
-    check("lookup handler uses zone helper + dictionary", msrc:find("Logic.lookup_tap_action(RealWeidu.lookupModeOn()", 1, true) and msrc:find("ui.dictionary.onLookupWord", 1, true))
-    check("no word -> falls through", msrc:find("no word: page turn / menu", 1, true) ~= nil)
-    check("auto-add: vocabbuilder enabled only during lookup", msrc:find("vs.enabled = english; restore = true", 1, true) and msrc:find("if restore then vs.enabled = prev end", 1, true))
-    check("bottom bar still unchanged", src:find('{ icon = "rm_brightness", fn = "showClassicBrightness" },', 1, true) ~= nil)
+    check("⋯ menu keeps the other 7 items + 同步进度 = 8", n_items == 8 and others)
+    check("vocab / lookup code gone", not src:find("ShowVocabBuilder", 1, true) and not src:find("toggleLookupMode", 1, true)
+        and not msrc:find("realweidu_lookup_tap", 1, true) and not msrc:find("onLookupWord", 1, true))
+    check("no jump-to-progress", not src:find("ShowSkimtoDialog", 1, true) and not src:find("进度跳转", 1, true))
+    check("sync confirm uses weread ProgressSync", src:find("weread.onWeReadSyncProgress", 1, true) and src:find("client.get_progress", 1, true))
+    local t = L.sync_progress_text(37.5, 40, nil)
+    check("sync text shows both", t:find("本地进度：37.5%", 1, true) and t:find("微信读书进度：40%", 1, true))
+    check("sync text unknown remote", L.sync_progress_text(nil, nil, "x"):find("未知", 1, true) ~= nil)
+    check("footer: page number + chapter always on", msrc:find("st.page_progress = true", 1, true) and msrc:find("st.book_chapter = true", 1, true) and msrc:find("st.lock_tap = true", 1, true))
+    check("footer tap opens nav", msrc:find('id = "realweidu_footer_tap"', 1, true) ~= nil)
+    check("brightness panel keeps the bar", src:find("if self.bright_open then self:_brightPanel(g, y)", 1, true) ~= nil)
 end
 -- 0.5.1: 查词模式 only stores English words in the vocabulary builder
 do
@@ -157,10 +146,7 @@ do
     check("mixed / non-Latin rejected", not W("hello世界") and not W("café") and not W("Привет") and not W("こんにちは") and not W("123") and not W("x2"))
     check("empty / punctuation / bad input rejected", not W("") and not W("   ") and not W("'") and not W("--") and not W(nil) and not W(42) and not W("two words"))
     local f = io.open(here .. "/../realweidu.koplugin/main.lua"); local msrc = f:read("*a"); f:close()
-    check("lookup gates vocab on is_english_word", msrc:find("local english = Logic.is_english_word(text)", 1, true) ~= nil)
-    check("vocab enabled flag forced to english-ness and restored", msrc:find("vs.enabled = english; restore = true", 1, true) and msrc:find("if restore then vs.enabled = prev end", 1, true))
-    check("fallback WordLookedUp only for english", msrc:find('if english and type(vs) ~= "table" and ui.vocabbuilder then', 1, true) ~= nil)
     local meta = io.open(here .. "/../realweidu.koplugin/_meta.lua"):read("*a")
-    check("version 0.6.0", meta:find('"0.6.1"', 1, true) and msrc:find('RealWeidu.VERSION = "0.6.1"', 1, true))
+    check("version 0.6.2", meta:find('"0.6.2"', 1, true) and msrc:find('RealWeidu.VERSION = "0.6.2"', 1, true))
 end
 print(string.format("\n%d checks, %d failed", n, fails)); os.exit(fails == 0 and 0 or 1)

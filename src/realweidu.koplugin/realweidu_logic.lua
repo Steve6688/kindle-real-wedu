@@ -368,4 +368,11 @@ function M.progress_info(cur, total, next_chapter_page, stats, default_ppm)
     }
 end
 
+-- 0.6.2 「同步进度」 confirm text
+function M.sync_progress_text(local_pct, remote_pct, err)
+    local function f(v) return v and (string.format("%.1f", v):gsub("%.0$", "") .. "%") or "未知" end
+    local t = "本地进度：" .. f(local_pct) .. "\n微信读书进度：" .. f(remote_pct)
+    if err then t = t .. "\n（读取微信读书进度失败：" .. err .. "）" end
+    return t .. "\n\n同步后将按微信读书的规则对齐两端进度。确定同步？"
+end
 return M

@@ -224,6 +224,7 @@ function M.open_book(weread, book_id)
     local action, payload = M.plan_open(weread, book_id)
     if not action then return false, payload end
     if action == "read" and type(weread.openBookForReading) == "function" then
+        M.quiet_open_until = os.time() + 5 -- 0.6.2: no 「正在打开」 popup for downloaded books
         local ok, opened = pcall(weread.openBookForReading, weread, payload)
         if ok and opened then return true end
         -- fall through to the detail page (it offers download/read buttons)
@@ -236,6 +237,32 @@ function M.open_book(weread, book_id)
     local ok, err = pcall(weread.showBookRecord, weread, payload)
     if not ok then return false, tostring(err) end
     return true
+end
+
+-- 0.6.2: hide KOReader's "Opening file '…'" (正在打开) InfoMessage when a
+-- downloaded book is opened from Real微读 (runtime wrap, KOReader untouched).
+function M.install_quiet_open()
+    local ok, ReaderUI = pcall(require, "apps/reader/readerui")
+    if not ok or type(ReaderUI) ~= "table" or ReaderUI._realweidu_quiet then return end
+    local UIManager = require("ui/uimanager")
+    local orig = ReaderUI.showReaderCoroutine
+    ReaderUI._realweidu_quiet = true
+    ReaderUI.showReaderCoroutine = function(self, file, provider, seamless)
+        if not (M.quiet_open_until and os.time() <= M.quiet_open_until) then
+            return orig(self, file, provider, seamless)
+        end
+        M.quiet_open_until = nil
+        M.quiet_opened = (M.quiet_opened or 0) + 1
+        local show = UIManager.show
+        UIManager.show = function(um, w, ...)
+            if type(w) == "table" and w.timeout == 0.0 and type(w.text) == "string" then w.invisible = true end
+            return show(um, w, ...)
+        end
+        local r = { pcall(orig, self, file, provider, seamless) }
+        UIManager.show = show
+        if not r[1] then error(r[2]) end
+        return unpack(r, 2)
+    end
 end
 
 -- Text helpers for the list UI.

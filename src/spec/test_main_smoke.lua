@@ -103,7 +103,7 @@ local orig_ob = fm.weread.openBookshelf
 fm.weread.openBookshelf = function() error("db locked") end
 g.on_import(); check("BUG-07 导入 error -> notice", tostring(shown[#shown].text):find("db locked") ~= nil)
 fm.weread.openBookshelf = orig_ob
-g.on_select(); check("选择 -> phase-2 notice", tostring(shown[#shown].text):find("二期") ~= nil)
+check("0.6.2 no 选择 action", g.on_select == nil)
 -- re-tap 书架 tab while grid open: old one closed, page kept
 g.page = 3
 P.showGrid()
@@ -122,7 +122,7 @@ calls.search = nil
 P.showDiscover()
 local dp = shown[#shown]
 check("发现 page shown, grid closed", getmetatable(dp).__index == Pages.Discover and closed[#closed] == g2)
-check("发现 entries only for existing weread methods", #dp.entries == 2) -- showSearch + openBookshelf in this stub
+check("0.6.2 发现 微信读书 = rankings + 换一批", dp.rank and #dp.rank.TABS >= 2 and dp.on_tab and dp.on_more and dp.on_book and dp.entries == nil)
 check("发现 recent from shelf", dp.books and #dp.books == 2)
 dp.on_search(); check("发现 search -> weread showSearch", calls.search)
 dp.on_open(dp.books[1]); check("发现 recent tap -> open_book", _G.opened == dp.books[1].bookId)
@@ -138,10 +138,10 @@ P.showMe()
 local mp = shown[#shown]
 check("我 page shown, discover closed", getmetatable(mp).__index == Pages.Me and closed[#closed] == dp)
 check("我 account name", mp.account_name == "小明")
-check("v0.3.8 我 = 0.3.3 look: 数据卡 + 5 rows + 返回 KOReader", mp.show_stats == true and #mp.rows == 6
-    and mp.rows[1].text == "阅读时长统计" and mp.rows[2].text == "我的笔记" and mp.rows[3].text == "书架同步"
-    and mp.rows[4].text == "阅读设置" and mp.rows[5].text == "退出到 Kindle" and not mp.rows[5].bold
-    and mp.rows[6].text == "返回 KOReader" and mp.footer == nil)
+check("0.6.2 我 = 数据卡 + rows without 书架同步", mp.show_stats == true and #mp.rows == 5
+    and mp.rows[1].text == "阅读时长统计" and mp.rows[2].text == "我的笔记"
+    and mp.rows[3].text == "阅读设置" and mp.rows[4].text == "退出到 Kindle" and not mp.rows[4].bold
+    and mp.rows[5].text == "返回 KOReader" and mp.footer == nil)
 check("v0.3.8 我 refreshes weekly stats on open (0.3.3, silent offline)", _G.stats_mode == "weekly"
     and mp.stats and mp.stats.week_min == 61)
 local function find_btn(page, pat)
@@ -213,8 +213,7 @@ fm.weread.refreshBookshelf = function() _G.synced2 = (_G.synced2 or 0) + 1 end
 fm.weread._wrs_redirect = nil
 fm.weread.showShelfView = function() _G.weread_list_shown = true end
 P.showGrid(); local gg = shown[#shown]; gg.on_import()
-find_btn(md, "书架同步").callback()
-check("导入 and 书架同步 -> weread sync (result shown in Real微读)", _G.synced2 == 2)
+check("刷新书架 -> weread sync (result shown in Real微读)", _G.synced2 == 1)
 check("fm weread instance patched by showGrid", fm.weread._wrs_redirect == true)
 -- after QR login -> shelf fetched and shown in Real微读
 local W2 = { library_db = { accountKey = function() return _G.logged and "k" or nil end, getShelf = function() return {} end },
@@ -354,33 +353,8 @@ local rinst = P:new{ ui = rui, path = "/x" }; rinst:init()
 check("reader: centre zone registered", zones and zones[1].id == "realweidu_menu_tap" and zones[1].overrides[1] == "tap_forward"
     and zones[1].screen_zone.ratio_x == 0.25 and zones[1].screen_zone.ratio_w == 0.5)
 zones[1].handler()
-check("reader: 查词模式 zone registered, off -> passes through", zones[2] and zones[2].id == "realweidu_lookup_tap"
-    and zones[2].handler({ pos = { x = 600, y = 800 } }) == false)
--- 0.5.1: 查词模式 stores only English words in vocabulary builder
-do
-    local seen = {}
-    local vs = { enabled = false }
-    local gd = { vocabulary_builder = vs, realweidu_lookup_mode = true }
-    local oldG, oldDev = rawget(_G, "G_reader_settings"), package.loaded["device"]
-    _G.G_reader_settings = { readSetting = function(_, k) return gd[k] end, isTrue = function(_, k) return gd[k] == true end,
-        saveSetting = function(_, k, v) gd[k] = v end }
-    package.loaded["device"] = oldDev or { screen = { getWidth = function() return 1236 end } }
-    local cur = "serendipity"
-    rui.view = { screenToPageTransform = function(_, p) return p end }
-    rui.document.getWordFromPosition = function() return { word = cur } end
-    rui.dictionary = { onLookupWord = function(_, w) seen[#seen + 1] = { w = w, en = vs.enabled } end }
-    local W = require("device").screen:getWidth()
-    local g = { pos = { x = math.floor(W / 2), y = 800 } }
-    check("0.5.1 lookup: english word -> vocab enabled during lookup, restored", zones[2].handler(g) == true
-        and seen[1] and seen[1].w == "serendipity" and seen[1].en == true and vs.enabled == false)
-    cur = "李善德"
-    check("0.5.1 lookup: chinese word -> dictionary shown, vocab NOT enabled", zones[2].handler(g) == true
-        and seen[2] and seen[2].w == "李善德" and seen[2].en == false and vs.enabled == false)
-    vs.enabled = true
-    check("0.5.1 lookup: chinese word with vocab globally on -> suppressed then restored", zones[2].handler(g) == true
-        and seen[3].en == false and vs.enabled == true)
-    _G.G_reader_settings = oldG; package.loaded["device"] = oldDev; rui.view = nil; rui.dictionary = nil; rui.document.getWordFromPosition = nil
-end
+check("0.6.2 reader: footer tap zone registered (no lookup zone)", zones[2] and zones[2].id == "realweidu_footer_tap"
+    and zones[2].overrides[1] == "footer_tap" and zones[3] == nil)
 check("reader: tap shows WeRead menu", getmetatable(shown[#shown]).__index == RMcls and shown[#shown].ui == rui)
 S:saveSetting("reader_menu", false); zones = nil
 P:new{ ui = rui, path = "/x" }:init()

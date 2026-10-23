@@ -157,7 +157,7 @@ local function S() return RealWeidu._settings_override or settings() end
 local function on(key) return S():readSetting(key) ~= false end
 RealWeidu.isOn = on
 RealWeidu.ENTER_TEXT = "进入 Real微读"
-RealWeidu.VERSION = "0.6.1"
+RealWeidu.VERSION = "0.6.2"
 
 -- Put 「进入 Real微读」 at the top of KOReader's ☰ (main) menu tab instead of
 -- after Exit (items missing from the order table are appended at the end).
@@ -269,6 +269,7 @@ function RealWeidu:init()
                 "gzip=", tostring(FastDL.speedups.gzip), "md5=", tostring(FastDL.Decrypt.md5_name))
         end
         -- 0.6.1 边下边读: full-book downloads open after the first chapters
+        pcall(Data.install_quiet_open) -- 0.6.2
         local oks, es = pcall(Stream.install)
         if not oks then logger.warn("realweidu: stream download not installed:", es) end
         if self.ui and self.ui.document then pcall(Stream.on_reader_open, self.ui) end
@@ -559,7 +560,6 @@ function RealWeidu.meRows()
         { text = "我的笔记", fn = function()
             info("weread 1.6.0 没有「全部笔记」列表接口。\n打开一本书后：阅读菜单「更多」→ 书签列表，"
                 .. "或 weread 菜单「划线和想法管理」查看该书笔记。") end },
-        { text = "书架同步", fn = function() RealWeidu.syncShelf() end },
         { text = "阅读设置", fn = function() RealWeidu.showSettingsDialog() end },
         { text = "退出到 Kindle", fn = function() RealWeidu.confirmExitToKindle() end },
         { text = "返回 KOReader", fn = function() RealWeidu.leaveToKOReader() end },
@@ -622,59 +622,54 @@ function RealWeidu:hookReader()
         overrides = { "tap_forward", "tap_backward" },
         handler = function() return RealWeidu.showReaderMenu(ui) end,
     },
-    -- 0.5.0 查词模式: when on, a single tap on a word looks it up (and adds it to the
-    -- vocabulary builder); taps in the left/right edge strips, or on no word, fall through
-    -- to page turning / the menu zone. When off the handler returns false immediately.
+    -- 0.6.2: tapping the bottom (page number / chapter) area opens the nav bar too
     {
-        id = "realweidu_lookup_tap",
+        id = "realweidu_footer_tap",
         ges = "tap",
-        screen_zone = { ratio_x = 0, ratio_y = 0, ratio_w = 1, ratio_h = 1 },
-        overrides = { "realweidu_menu_tap", "tap_forward", "tap_backward", "readermenu_tap", "readerconfigmenu_tap" },
-        handler = function(ges) return RealWeidu.lookupTap(ui, ges) end,
+        screen_zone = RealWeidu.FOOTER_ZONE,
+        overrides = { "footer_tap", "tap_forward", "tap_backward", "readermenu_tap", "readerconfigmenu_tap" },
+        handler = function() return RealWeidu.showReaderMenu(ui) end,
     } })
+    RealWeidu.setupFooter(ui)
 end
 
-function RealWeidu.lookupModeOn()
-    local G = rawget(_G, "G_reader_settings")
-    return G and G:isTrue(Logic.LOOKUP_SETTING) or false
-end
-
-function RealWeidu.setLookupMode(on)
-    local G = rawget(_G, "G_reader_settings")
-    if not G then return end
-    G:saveSetting(Logic.LOOKUP_SETTING, on and true or false)
-    if G.flush then pcall(G.flush, G) end
-end
-
-function RealWeidu.lookupTap(ui, ges)
-    local pos = ges and ges.pos
-    if not pos or not RealWeidu.lookupModeOn() then return false end
-    local W = require("device").screen:getWidth()
-    if Logic.lookup_tap_action(RealWeidu.lookupModeOn(), pos.x, W) ~= "lookup" then return false end
-    local word
+-- 0.6.2: bottom of the reader = always-visible page number + live chapter title.
+-- Runtime-only ReaderFooter settings (KOReader code untouched); a tap on the
+-- footer no longer hides/cycles it (lock_tap) — it opens our menu instead.
+RealWeidu.FOOTER_ZONE = { ratio_x = 0, ratio_y = 0.93, ratio_w = 1, ratio_h = 0.07 }
+function RealWeidu.setupFooter(ui)
+    local f = ui and ui.view and ui.view.footer
+    if not (f and type(f.settings) == "table") then return false end
+    local st = f.settings
+    st.disable_progress_bar = true
+    st.all_at_once = true
+    st.hide_empty_generators = true
+    st.lock_tap = true
+    st.book_chapter = true
+    st.page_progress = true
+    st.chapter_progress = false
+    st.pages_left = false
+    st.pages_left_book = false
+    st.percentage = false
+    st.book_time_to_read = false
+    st.chapter_time_to_read = false
+    st.time = false
+    st.battery = false
+    st.wifi_status = false
+    st.frontlight = false
+    st.mem_usage = false
+    st.bookmark_count = false
+    st.book_chapter_max_width_pct = 70
     pcall(function()
-        local hp = ui.view:screenToPageTransform(pos)
-        if hp then word = ui.document:getWordFromPosition(hp) end
+        if f.updateFooterContainer then f:updateFooterContainer() end
+        f.mode = 1 -- visible
+        if f.applyFooterMode then f:applyFooterMode(1) end
+        if f.onUpdateFooter then f:onUpdateFooter(true) end
     end)
-    local text = word and word.word
-    if type(text) ~= "string" or not text:match("%S") then return false end -- no word: page turn / menu
-    if not ui.dictionary then return false end
-    -- auto-add to KOReader's vocabbuilder: its WordLookedUp handler only records non-manual
-    -- lookups while vocabulary_builder.enabled is true, so enable it just for this lookup.
-    local G = rawget(_G, "G_reader_settings")
-    local vs = G and G:readSetting("vocabulary_builder")
-    local restore, prev = false, nil
-    local english = Logic.is_english_word(text) -- 0.5.1: non-Latin selections never stored
-    if type(vs) == "table" and (vs.enabled and true or false) ~= english then
-        prev = vs.enabled; vs.enabled = english; restore = true
-    end
-    local boxes = word.sbox and { word.sbox } or nil
-    local ok, err = pcall(ui.dictionary.onLookupWord, ui.dictionary, text, false, boxes)
-    if restore then vs.enabled = prev end
-    if not ok then logger.warn("realweidu: lookup", err) end
-    if english and type(vs) ~= "table" and ui.vocabbuilder then
-        pcall(ui.handleEvent, ui, require("ui/event"):new("WordLookedUp", text,
-            ui.doc_props and ui.doc_props.display_title or "", true))
+    -- never let a footer tap hide it
+    if not f._realweidu_tap then
+        f._realweidu_tap = true
+        f.TapFooter = function() return RealWeidu.showReaderMenu(ui) end
     end
     return true
 end
@@ -808,19 +803,42 @@ function RealWeidu.showDiscover()
     ui_icons()
     local old_pages = take_pages() -- 0.4.2: closed after the new page is up
     local Pages = require("realweidu_pages")
-    local entries = {}
-    local function add(text, method, ...)
-        if type(weread[method]) == "function" then
-            local args = { ... }
-            entries[#entries + 1] = { text = text, fn = function() call_weread(method, unpack(args)) end }
-        end
+    local Rank = require("realweidu_rank")
+    local function cover_dir()
+        local DataStorage = require("datastorage")
+        return DataStorage:getDataDir() .. "/cache/realweidu_covers"
     end
-    add("搜索书城（书名 / 作者）", "showSearch")          -- library.lua:1640
-    add("公众号文章", "showMPShelfPage")                   -- library.lua:1003
-    add("微信读书收藏", "showWereadCollection")            -- menu.lua:787
-    entries[#entries + 1] = { text = "刷新 / 管理书架", fn = function() RealWeidu.syncShelf() end }
+    -- 0.6.2: rankings / recommendations are fetched in weread's online task,
+    -- then the page is redrawn (session cache in realweidu_rank).
+    local function load(force)
+        local client = weread.client
+        if not client or type(weread.runOnlineTask) ~= "function" then
+            RealWeidu._rank_error = "weread 不可用"; return
+        end
+        weread:runOnlineTask("加载微信读书榜单", function()
+            local ok, err = Rank.load(client, cover_dir(), force)
+            RealWeidu._rank_error = (not ok) and tostring(err) or nil
+            if RealWeidu._discover_page then
+                RealWeidu._discover_page.rank_error = RealWeidu._rank_error
+                RealWeidu._discover_page:refresh()
+            end
+        end)
+    end
     local page = Pages.Discover:new{
-        books = books, entries = entries,
+        books = books, rank = Rank, rank_error = RealWeidu._rank_error,
+        on_tab = function(i) Rank.set_tab(i); RealWeidu._discover_page:refresh(); load(false) end,
+        on_more = function()
+            local need = Rank.next_batch()
+            RealWeidu._discover_page:refresh()
+            if need or #Rank.batch() > 0 then load(false) end
+        end,
+        on_reload = function() load(true) end,
+        on_book = function(b)
+            local ok = Data.open_book(weread, b.bookId)
+            if not ok and type(weread.showBookRecord) == "function" then
+                call_weread("showBookRecord", { book_id = b.bookId, bookId = b.bookId, title = b.title, author = b.author, cover = b.cover })
+            end
+        end,
         on_nav_discover = function() RealWeidu.showDiscover() end,
         on_nav_shelf = function() RealWeidu.showGrid() end,
         on_nav_me = function() RealWeidu.showMe() end,
@@ -831,7 +849,12 @@ function RealWeidu.showDiscover()
         end,
         on_all = function() RealWeidu.showGrid() end,
     }
-    return show_page(page, QA_DISCOVER, old_pages)
+    RealWeidu._discover_page = page
+    local r = show_page(page, QA_DISCOVER, old_pages)
+    if not (Rank.lists[Rank.TABS[Rank.tab].id]) and not RealWeidu._rank_loading_disabled then
+        UIManager:nextTick(function() load(false) end)
+    end
+    return r
 end
 
 -- 我: account name (weread settings "account", qr_login.lua:288-293), 本周阅读
@@ -957,10 +980,7 @@ function RealWeidu.showGrid()
             local ok, e = Data.open_book(weread, book.bookId)
             if not ok then info(Data.MESSAGES[e] or ("打开失败：" .. tostring(e))) end
         end,
-        on_import = function() RealWeidu.syncShelf() end, -- 0.3.8: sync -> back to this shelf
-        on_select = function()
-            info("「选择」（批量管理）计划在二期提供。\n现在可点「导入」进入微信读书书架管理。")
-        end,
+        on_import = function() RealWeidu.syncShelf() end, -- 0.6.2 「刷新书架」 (sync -> back to this shelf)
         on_search = function(g) RealWeidu.showSearchDialog(g) end,
         on_discover = function() RealWeidu.showDiscover() end,
         on_shelf = function() RealWeidu.showGrid() end,

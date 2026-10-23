@@ -3,7 +3,6 @@
 -- Everything it does goes through ReaderUI's own events/modules:
 --   ToggleBookmark            apps/reader/modules/readerbookmark.lua:370, isPageBookmarked :423
 --   ShowToc                   apps/reader/modules/readertoc.lua:806, getTocTitleOfCurrentPage :475
---   ShowSkimtoDialog          apps/reader/modules/readergoto.lua:124 (progress slider / go to)
 --   ShowFlDialog              frontend/device/devicelistener.lua:194 (frontlight dialog)
 --   ShowFulltextSearchInput   apps/reader/modules/readersearch.lua:294
 --   SetFontSize/SetLineSpace/SetFontBaseWeight/SetFont  apps/reader/modules/readerfont.lua:203,212,221,283
@@ -343,7 +342,8 @@ function RM:_fontIconBar(g)
     local icons = {
         { draw = "toc",     fn = function() self:showTocSheet() end },
         { draw = "compass", fn = function() self:showBookmarks() end },
-        { draw = "dot",     fn = function() self:showProgress() end },
+        { draw = "dot",     fn = function() -- 0.6.2: no jump-to-progress; back to the bars + progress card
+            self.font_open = false; self.progress_open = true; self:refresh("ui") end },
         { draw = "sun",     fn = function() self:showBrightnessPanel() end },
         { draw = "A",       fn = function() self:toggleFont() end },
     }
@@ -643,7 +643,6 @@ function RM:showMoreReading()
                 else self:close(); send_event(self.ui, "ShowConfigMenu") end end),
             item("目录", function() self:showToc() end),
             item("书签与笔记", function() self:close(); send_event(self.ui, "ShowBookmark") end),
-            item("进度跳转", function() self:showProgress() end),
             item("搜索全书", function() self:close(); send_event(self.ui, "ShowFulltextSearchInput") end),
             item("KOReader 阅读设置（刷新频率、旋转等）", function() self:close(); send_event(self.ui, "ShowMenu") end),
             { { text = "关闭", callback = function() UIManager:close(dlg) end } },
@@ -722,7 +721,7 @@ RM.BOTTOM = {
     { icon = "rm_back",       fn = "back" },
     { icon = "rm_toc",        fn = "showTocSheet" }, -- 0.4.8: left sidebar TOC
     { icon = "progress",      fn = "toggleProgressCard" }, -- 0.4.8: was 指南针 (tab_discover)
-    { icon = "rm_brightness", fn = "showClassicBrightness" },
+    { icon = "rm_brightness", fn = "toggleBrightPanel" }, -- 0.6.2: in-menu panel, bar stays
     { icon = "rm_font",       fn = "toggleFont" },
 }
 
@@ -756,7 +755,8 @@ function RM:_classicBottomBar(g)
     local m, W, H = CM, self.W, self.H
     local y = H - m.bar_h
     self.bar_rect = rect(0, y, W, m.bar_h)
-    if self.progress_open then self:_progressCard(g, y) end
+    if self.bright_open then self:_brightPanel(g, y)
+    elseif self.progress_open then self:_progressCard(g, y) end
     place(g, FrameContainer:new{ bordersize = 0, padding = 0, margin = 0, background = U.WHITE,
         width = W, height = m.bar_h, U.hspan(0) }, 0, y)
     place(g, U.hline(W, 1), 0, y)
@@ -768,6 +768,9 @@ function RM:_classicBottomBar(g)
             local name = b.icon
             if b.fn == "toggleFont" and self.font_open then name = "rm_font_active" end
             place(g, CenterContainer:new{ dimen = Geom:new{ w = sw, h = m.bar_h }, U.icon(name, m.icon) }, x, y)
+            if b.fn == "toggleBrightPanel" and self.bright_open then
+                place(g, U.hline(math.floor(sw * 0.4), 4), x + math.floor(sw * 0.3), y + m.bar_h - U.px(14))
+            end
         end
         self:_hit(rect(x, y, sw, m.bar_h), function() self[b.fn](self) end)
     end
@@ -800,6 +803,58 @@ function RM:showClassicBrightness()
     end
 end
 
+-- 0.6.2: brightness / warmth panel drawn above the bottom bar; the bar stays.
+function RM:toggleBrightPanel()
+    if not Device:hasFrontlight() then return self:showClassicBrightness() end
+    self.bright_open = not self.bright_open
+    if self.bright_open then self.progress_open = false end
+    self:refresh("ui")
+end
+
+function RM:_brightPanel(g, bar_y)
+    local W = self.W
+    local pad = U.px(64)
+    local lv = self:lightValues()
+    local rows = lv.has_warm and 2 or 1
+    local h = U.px(30) + rows * U.px(130) + U.px(20)
+    local y0 = bar_y - h
+    place(g, FrameContainer:new{ bordersize = 0, padding = 0, margin = 0, background = U.WHITE,
+        width = W, height = h, U.hspan(0) }, 0, y0)
+    place(g, U.hline(W, 2), 0, y0)
+    self.panel_rect = rect(0, y0, W, h)
+    self:_hit(rect(0, y0, W, h), function() end) -- swallow taps between rows
+    local y = y0 + U.px(30)
+    local function frac(v, lo, hi) if not v or not lo or not hi or hi <= lo then return 0 end return (v - lo) / (hi - lo) end
+    local function lightrow(name, kind, enabled, f, value_txt)
+        local rh = U.px(130)
+        local lw = U.text(name, U.px(34)); lw.fgcolor = LABEL_GRAY
+        place(g, lw, pad, y + math.floor((rh - lw:getSize().h) / 2))
+        local tx, tw = pad + U.px(150), W - 2 * pad - U.px(150) - U.px(110)
+        local ty = y + math.floor((rh - U.px(8)) / 2)
+        place(g, FrameContainer:new{ bordersize = 0, background = U.GRAY, padding = 0, margin = 0,
+            width = tw, height = U.px(8), U.hspan(0) }, tx, ty)
+        if enabled then
+            local fx = math.floor(tw * (f or 0))
+            if fx > 0 then
+                place(g, FrameContainer:new{ bordersize = 0, background = U.BLACK, padding = 0, margin = 0,
+                    width = fx, height = U.px(8), U.hspan(0) }, tx, ty)
+            end
+            local kd = U.px(48)
+            place(g, FrameContainer:new{ bordersize = 0, background = U.BLACK, radius = math.floor(kd / 2),
+                padding = 0, margin = 0, width = kd, height = kd, U.hspan(0) },
+                tx + fx - math.floor(kd / 2), y + math.floor((rh - kd) / 2))
+            self:_hit(rect(tx - U.px(30), y, tw + U.px(60), rh), function(pos) self:setLight(kind, (pos.x - tx) / tw) end)
+        end
+        local vt = U.text(value_txt, U.px(32)); if not enabled then vt.fgcolor = LABEL_GRAY end
+        place(g, vt, W - pad - vt:getSize().w, y + math.floor((rh - vt:getSize().h) / 2))
+        y = y + rh
+    end
+    lightrow("亮度", "fl", lv.has_fl and lv.fl ~= nil, frac(lv.fl, lv.min, lv.max), lv.has_fl and tostring(lv.fl or "—") or "无")
+    if lv.has_warm then
+        lightrow("暖光", "warm", lv.warm ~= nil, frac(lv.warm, lv.wmin, lv.wmax), tostring(lv.warm or "—"))
+    end
+end
+
 function RM:back()
     self:close()
     if self.on_back then self.on_back() end
@@ -826,6 +881,7 @@ end
 
 function RM:toggleProgressCard()
     self.progress_open = not self.progress_open
+    if self.progress_open then self.bright_open = false end
     self:refresh("ui") -- partial refresh, no animation
 end
 
@@ -853,7 +909,6 @@ function RM:_progressCard(g, bar_y)
     self:_hit(rect(cx, cy, cw, ch), function() self:toggleProgressCard() end)
 end
 
-function RM:showProgress() self:close(); send(self.ui, "ShowSkimtoDialog") end
 function RM:showBrightness() self:showBrightnessPanel() end
 function RM:showBrightnessPanel()
     -- Prefer in-menu brightness sheet when device has frontlight; else KOReader dialog.
@@ -1073,36 +1128,38 @@ function RM:setFont(face)
     self:refresh("ui")
 end
 
--- 0.5.0 查词模式 toggle (persisted in G_reader_settings[Logic.LOOKUP_SETTING])
-function RM:lookupModeOn()
-    local G = rawget(_G, "G_reader_settings")
-    return G and G:isTrue(Logic.LOOKUP_SETTING) or false
-end
-function RM:toggleLookupMode()
-    local G = rawget(_G, "G_reader_settings")
-    if not G then return end
-    local on = not self:lookupModeOn()
-    G:saveSetting(Logic.LOOKUP_SETTING, on)
-    if G.flush then pcall(G.flush, G) end
+-- 0.6.2 「同步进度」: show local vs WeRead progress, sync only after confirming
+-- (weread's own ProgressSync via onWeReadSyncProgress; weread untouched).
+function RM:syncProgress()
+    local weread, ui = self.weread, self.ui
     self:close()
-    UIManager:show(require("ui/widget/infomessage"):new{ timeout = 2,
-        text = on and "查词模式已开启：点单词即查词并加入生词本；点屏幕左右边缘翻页。"
-            or "查词模式已关闭：点屏幕翻页。" })
-end
-
--- 0.5.0: open KOReader's built-in Vocabulary builder (plugins/vocabbuilder.koplugin,
--- VocabBuilder:onShowVocabBuilder). Read-only use of KOReader; nothing of it is modified.
-function RM:openVocabBuilder()
-    self:close()
-    -- ReaderUI registers plugins by folder name -> ui.vocabbuilder. Its on* handlers are wrapped
-    -- by PluginLoader's HandlerSandbox (callable tables), so dispatch KOReader's own event.
-    local vb = self.ui and (self.ui.vocabbuilder or self.ui.vocabulary_builder)
-    if vb then
-        send(self.ui, "ShowVocabBuilder")
-    else
-        UIManager:show(require("ui/widget/infomessage"):new{
-            text = "生词本插件未启用：KOReader 菜单 → 工具 → 插件管理 → 启用「Vocabulary builder」后重启。" })
+    local function msg(t) UIManager:show(require("ui/widget/infomessage"):new{ text = t, timeout = 3 }) end
+    if not weread then return msg("未找到微信读书插件。") end
+    local book_id
+    pcall(function() book_id = weread:detectWeReadBook() end)
+    if not book_id then return msg("当前书不是微信读书书籍，无法同步进度。") end
+    local local_pct
+    pcall(function()
+        local cur, total = ui:getCurrentPage(), ui.document:getPageCount()
+        if cur and total and total > 0 then local_pct = math.floor(cur * 1000 / total + 0.5) / 10 end
+    end)
+    local function confirm(remote_pct, err)
+        local ConfirmBox = require("ui/widget/confirmbox")
+        UIManager:show(ConfirmBox:new{
+            text = Logic.sync_progress_text(local_pct, remote_pct, err),
+            ok_text = "同步", cancel_text = "取消",
+            ok_callback = function()
+                local ok, e = pcall(weread.onWeReadSyncProgress, weread)
+                if not ok then msg("同步失败：" .. tostring(e)) end
+            end,
+        })
     end
+    if not (weread.client and type(weread.runOnlineTask) == "function") then return confirm(nil, "weread 不可用") end
+    weread:runOnlineTask("读取微信读书进度", function()
+        local ok, r = pcall(weread.client.get_progress, weread.client, book_id)
+        local p = ok and type(r) == "table" and r.book and tonumber(r.book.progress) or nil
+        confirm(p, (not ok) and tostring(r) or nil)
+    end)
 end
 
 function RM:showMore()
@@ -1118,8 +1175,7 @@ function RM:showMore()
             item("书签列表", function() self:close(); send(self.ui, "ShowBookmark") end),
             item("下载并匹配划线/想法", function() self:syncThoughts() end),
             item("搜索全书", function() self:close(); send(self.ui, "ShowFulltextSearchInput") end),
-            item("生词本", function() self:openVocabBuilder() end), -- 0.5.0: KOReader vocabbuilder
-            item(self:lookupModeOn() and "查词模式：开 ✓" or "查词模式：关", function() self:toggleLookupMode() end),
+            item("同步进度", function() self:syncProgress() end), -- 0.6.2
             item("书籍详情", function()
                 self:close()
                 -- weread/ui/library.lua:1768 for WeRead books; KOReader book info otherwise

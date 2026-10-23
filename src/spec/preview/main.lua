@@ -407,6 +407,46 @@ function H:init()
                 UIManager:scheduleIn(2, shot)
             end)
             return
+        elseif MODE == "quietopen" or MODE == "loudopen" then -- 0.6.2: no 「正在打开」 popup
+            if MODE == "quietopen" then require("realweidu_data").quiet_open_until = os.time() + 5 end
+            require("apps/reader/readerui"):showReader("/tmp/korprev/sample.epub")
+            UIManager:scheduleIn(0.01, function()
+                local vis = 0
+                for _, e in ipairs(UIManager._window_stack) do
+                    if e.widget.text and tostring(e.widget.text):find("sample", 1, true) and not e.widget.invisible then vis = vis + 1 end
+                end
+                io.stderr:write("WSPREV " .. MODE .. " visible_opening_popups=" .. vis .. " quiet_opened="
+                    .. tostring(require("realweidu_data").quiet_opened) .. "\n")
+                shot()
+            end)
+            return
+        elseif MODE == "footer" or MODE == "bright2" or MODE == "syncprog" or MODE == "more062" or MODE == "progress062" then
+            require("apps/reader/readerui"):showReader("/tmp/korprev/sample.epub")
+            UIManager:scheduleIn(4, function()
+                local ui = require("apps/reader/readerui").instance
+                for i = #UIManager._window_stack, 1, -1 do
+                    local w = UIManager._window_stack[i] and UIManager._window_stack[i].widget
+                    if w and w.text then UIManager:close(w) end
+                end
+                if MODE == "footer" then UIManager:setDirty(nil, "full"); UIManager:scheduleIn(2, shot); return end
+                local RM = require("realweidu_readermenu")
+                local W = ui.weread
+                if MODE == "syncprog" and W then -- stub: WeRead book + remote progress 42%
+                    W.detectWeReadBook = function() return "1003" end
+                    W.runOnlineTask = function(_, _l, cb) cb(); return true end
+                    W.client = W.client or {}
+                    W.client.get_progress = function() return { book = { progress = 42 } } end
+                end
+                local menu = RM:new{ ui = ui, weread = W, on_back = function() end }
+                UIManager:show(menu, "ui")
+                if MODE == "bright2" then menu:toggleBrightPanel() end
+                if MODE == "progress062" then menu:toggleProgressCard() end
+                if MODE == "more062" then menu:showMore() end
+                if MODE == "syncprog" then menu:syncProgress() end
+                io.stderr:write("WSPREV " .. MODE .. " bright_open=" .. tostring(menu.bright_open) .. " bar=" .. tostring(menu.bar_rect and menu.bar_rect.y) .. "\n")
+                UIManager:scheduleIn(2, shot)
+            end)
+            return
         elseif MODE == "readingmenu" or MODE == "tocsheet" then
             -- open sample book then show our reading menu / TOC sheet
             require("apps/reader/readerui"):showReader("/tmp/korprev/sample.epub")
@@ -429,7 +469,30 @@ function H:init()
                 UIManager:scheduleIn(2, shot)
             end)
             return
-        elseif MODE == "discover" then P.showDiscover()
+        elseif MODE == "discover" or MODE == "discover2" or MODE == "discover3" then
+            -- 0.6.2: WeRead rankings/recommendations (synthetic data; box has no WeRead login)
+            local R = require("realweidu_rank")
+            local names = { "平凡的世界","杀死一只知更鸟","小王子","蛤蟆先生去看心理医生","狂人日记","神的孩子全跳舞","漫游在雨中池塘","自卑与超越","海边的卡夫卡","我是落花生","厌女","追风筝的人" }
+            local function list(prefix, n)
+                local l = {}
+                for i = 1, n do
+                    local k = (i - 1) % #names
+                    l[i] = { bookId = prefix .. i, title = names[k + 1], author = "作者" .. i,
+                        cover_file = (k ~= 4 and k ~= 9) and ("/tmp/korprev/covers/" .. k .. ".png") or nil }
+                end
+                return l
+            end
+            for i, t in ipairs(R.TABS) do
+                local l = list(t.id, 20)
+                if i == 2 then table.insert(l, 1, table.remove(l, 7)) end
+                R.lists[t.id] = { books = l }
+            end
+            local rec = list("rec", 12)
+            for i = 1, #rec do rec[i] = list("rec", 12)[((i + 4) % 12) + 1] end
+            R.lists[R.RECOMMEND .. ":0"] = { books = rec }
+            if MODE == "discover2" then R.set_tab(2) end
+            if MODE == "discover3" then R.next_batch() end
+            P.showDiscover()
         elseif MODE == "me" then P.showMe()
         else
             if MODE == "streamshelf" then -- 0.6.1: shelf progress label

@@ -117,28 +117,27 @@ function ShelfGrid:_buildHeader()
             TextWidget:new{ text = label, face = face(L.action_font), fgcolor = BLACK },
         }
     end
-    local imp, sel = action("import", "导入"), action("select", "选择")
+    -- 0.6.2: 「导入」「选择」 replaced by one 「刷新书架」 (sync with WeRead)
+    local imp = action("refresh", "刷新书架")
     local title = TextWidget:new{ text = self.title or "书架", face = face(L.title_font), bold = true, fgcolor = BLACK }
     local gap = math.floor(L.action_font * 1.2)
-    local right_w = imp:getSize().w + gap + sel:getSize().w
+    local right_w = imp:getSize().w
     local row_inner_w = Screen:getWidth() - 2 * L.margin
     local title_row = HorizontalGroup:new{ align = "center",
         HorizontalSpan:new{ width = L.margin },
         LeftContainer:new{ dimen = Geom:new{ w = row_inner_w - right_w, h = L.title_row_h }, title },
-        imp, HorizontalSpan:new{ width = gap }, sel,
+        imp,
     }
     -- hit rectangles (screen coords) for the header controls; full row height
     -- so each target is >= 120 px tall.
     local y0 = self.content_top
-    local sel_w = sel:getSize().w
     local imp_w = imp:getSize().w
     local right_x = L.margin + row_inner_w - right_w
     local pad = math.floor(gap / 2)
     self.hit_search = Geom:new{ x = L.margin, y = y0 + L.search_top, w = L.search_w, h = L.search_h }
     local ty = y0 + L.search_top + L.search_h
     self.hit_import = Geom:new{ x = right_x - pad, y = ty, w = math.max(imp_w + 2 * pad, L.title_row_h), h = L.title_row_h }
-    self.hit_select = Geom:new{ x = right_x + imp_w + gap - pad, y = ty,
-        w = math.max(sel_w + 2 * pad, L.title_row_h), h = L.title_row_h }
+    self.hit_select = nil
     return VerticalGroup:new{ align = "left",
         VerticalSpan:new{ width = L.search_top },
         HorizontalGroup:new{ HorizontalSpan:new{ width = L.margin }, capsule },
@@ -213,7 +212,7 @@ function ShelfGrid:_buildGrid()
     local og = OverlapGroup:new{ dimen = Geom:new{ w = Screen:getWidth(), h = L.grid_h } }
     if #items == 0 then
         local msg = (self.keyword and self.keyword ~= "") and ("书架中没有匹配「" .. self.keyword .. "」的书")
-            or "书架为空。点右上「导入」在微信读书中同步书架。"
+            or "书架为空。点右上「刷新书架」同步微信读书书架。"
         og[1] = CenterContainer:new{ dimen = Geom:new{ w = Screen:getWidth(), h = math.floor(L.grid_h / 2) },
             TextWidget:new{ text = msg, face = face(L.name_font), fgcolor = BLACK } }
         return og

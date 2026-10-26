@@ -28,8 +28,17 @@ function Page:init()
     self.nav_h = self.own_nav and U.nav_height() or 0
     self.avail = self.avail - self.nav_h
     self.dimen = rect(0, 0, self.W, Screen:getHeight())
-    self.ges_events = { Tap = { GestureRange:new{ ges = "tap", range = function() return self.dimen end } } }
-    if Device:hasKeys() then self.key_events = { Close = { { "Back" } } } end
+    self.ges_events = {
+        Tap = { GestureRange:new{ ges = "tap", range = function() return self.dimen end } },
+        Swipe = { GestureRange:new{ ges = "swipe", range = function() return self.dimen end } },
+    }
+    if Device:hasKeys() then
+        self.key_events = {
+            NextPage = { { Device.input and Device.input.group and Device.input.group.PgFwd or "RPgFwd" } },
+            PrevPage = { { Device.input and Device.input.group and Device.input.group.PgBack or "RPgBack" } },
+            Close = { { Device.input and Device.input.group and Device.input.group.Back or "Back" } },
+        }
+    end
     self.frame = FrameContainer:new{ bordersize = 0, padding = 0, margin = 0, background = U.WHITE,
         width = self.W, height = self.top + self.avail + self.nav_h, U.hspan(0) }
     self[1] = self.frame
@@ -39,14 +48,20 @@ end
 function Page:refresh(no_dirty)
     if self.frame[1] and self.frame[1].free then self.frame[1]:free() end
     self.hits = {}
+    self._paged = {}
+    self._active_page_key = nil
     local g = OverlapGroup:new{ dimen = Geom:new{ w = self.W, h = self.avail + self.nav_h } }
     self:build(g)
     if self.own_nav then
-        -- 0.3.3-style bar: 〈 发现 书架 我 〉 (arrows inactive on these pages)
-        place(g, U.bottom_nav(self.nav_active, self.W, false, false), 0, self.avail)
+        local page = self._active_page_key and self._paged[self._active_page_key]
+        local has_prev = page and page.first > 1 or false
+        local has_next = page and page.last < page.n or false
+        place(g, U.bottom_nav(self.nav_active, self.W, has_prev, has_next), 0, self.avail)
         self:hit(rect(0, self.avail, self.W, self.nav_h), function(p)
             local slot = U.NAV_SLOTS[U.nav_slot(p.x, self.W)]
-            if slot == "discover" and self.on_nav_discover then self.on_nav_discover()
+            if slot == "prev" then self:onPrevPage()
+            elseif slot == "next" then self:onNextPage()
+            elseif slot == "discover" and self.on_nav_discover then self.on_nav_discover()
             elseif slot == "shelf" and self.on_nav_shelf then self.on_nav_shelf()
             elseif slot == "me" and self.on_nav_me then self.on_nav_me() end
         end)
@@ -70,6 +85,27 @@ end
 function Page:onClose() UIManager:close(self); return true end
 function Page:onCloseWidget() if self.frame and self.frame[1] and self.frame[1].free then self.frame[1]:free() end end
 
+function Page:onNextPage()
+    local key = self._active_page_key
+    local page = key and self._paged[key]
+    if page and page.last < page.n then self[key] = page.last; self:refresh() end
+    return true
+end
+function Page:onPrevPage()
+    local key = self._active_page_key
+    local page = key and self._paged[key]
+    if page and page.first > 1 then
+        self[key] = Logic.prev_offset(page.n, page.fit, page.first - 1)
+        self:refresh()
+    end
+    return true
+end
+function Page:onSwipe(_, ges)
+    local d = ges and ges.direction
+    if d == "west" or d == "north" then return self:onNextPage() end
+    if d == "east" or d == "south" then return self:onPrevPage() end
+end
+
 -- list row with bottom 1px line and › (UI-SPEC v1.1 我的页列表 / 发现页入口)
 function Page.row_h() return math.max(U.px(120), 120) end
 
@@ -91,8 +127,8 @@ function Page:rows_paged(g, y, list, key)
     local n, h = #list, Page.row_h()
     local fit = math.floor((self.avail - y) / h)
     local first, last, has_prev, has_next = Logic.page_rows(n, fit, self[key] or 0)
-    self._paged = self._paged or {}
     self._paged[key] = { n = n, fit = fit, first = first, last = last }
+    self._active_page_key = key
     for i = first, last do
         local r = list[i]
         y = self:row(g, y, r.text, r.fn, r.bold)
@@ -244,3 +280,4 @@ function Me:build(g)
 end
 
 return { Discover = Discover, Me = Me, Page = Page }
+

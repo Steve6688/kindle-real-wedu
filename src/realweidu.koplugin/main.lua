@@ -367,7 +367,6 @@ end
 function RealWeidu.leaveToKOReader()
     Data._paused = true
     close_pages()
-    info("已返回 KOReader。\n再次进入：KOReader 菜单 ☰ 第一项「进入 Real微读」，或手势「打开 Real微读」；下次启动自动进入。")
 end
 
 function RealWeidu:addToMainMenu(menu_items)
@@ -551,15 +550,10 @@ function RealWeidu.exitToKindle()
 end
 
 function RealWeidu.confirmExitToKindle()
-    local ConfirmBox = require("ui/widget/confirmbox")
-    UIManager:show(ConfirmBox:new{
-        text = "退出 KOReader，返回 Kindle 主界面？",
-        ok_text = "退出",
-        ok_callback = function() RealWeidu.exitToKindle() end,
-    })
+    RealWeidu.exitToKindle()
 end
 
--- 「我」 page shortcuts.
+-- 「我」 rows, as in 0.3.3 (+ 返回 KOReader, which 0.3.5 added).
 function RealWeidu.meRows()
     return {
         { text = "阅读时长统计", fn = function() call_weread("showReadStats") end },   -- read_report.lua:238
@@ -567,6 +561,8 @@ function RealWeidu.meRows()
             info("weread 1.6.0 没有「全部笔记」列表接口。\n打开一本书后：阅读菜单「更多」→ 书签列表，"
                 .. "或 weread 菜单「划线和想法管理」查看该书笔记。") end },
         { text = "阅读设置", fn = function() RealWeidu.showSettingsDialog() end },
+        { text = "退出到 Kindle", fn = function() RealWeidu.confirmExitToKindle() end },
+        { text = "返回 KOReader", fn = function() RealWeidu.leaveToKOReader() end },
     }
 end
 

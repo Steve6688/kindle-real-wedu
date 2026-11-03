@@ -953,7 +953,19 @@ function RealWeidu.refreshStats(weread, on_done, silent, delay)
         local ok, raw = pcall(weread.client.get_read_stats, weread.client, "weekly")
         local good = ok and type(raw) == "table" -- BUG-04: nil / non-table is a failure too
         if good then
-            local c = { week_min = Logic.minutes(raw.totalReadTime), notes = Logic.notes_from_summary(raw), at = os.time() }
+            local now = os.time()
+            local today = os.date("!%Y-%m-%d", now + 8 * 3600)
+            local seconds = nil
+            if type(raw.readTimes) == "table" then
+                seconds = 0
+                for timestamp, duration in pairs(raw.readTimes) do
+                    local t = tonumber(timestamp)
+                    if t and os.date("!%Y-%m-%d", t + 8 * 3600) == today then
+                        seconds = seconds + (tonumber(duration) or 0)
+                    end
+                end
+            end
+            local c = { week_min = Logic.minutes(raw.totalReadTime), today_min = Logic.minutes(seconds), today_date = today, at = now }
             S():saveSetting("stats_cache", c); S():flush()
         else
             logger.warn("realweidu: weekly stats failed:", raw)
@@ -976,7 +988,8 @@ function RealWeidu.showMe()
         local hint
         if c.at then hint = "本周阅读更新于 " .. os.date("%m-%d %H:%M", c.at) .. "，点数据卡刷新"
         else hint = "点数据卡联网获取本周阅读" end
-        return { week_min = c.week_min, finished = Logic.count_finished(books), notes = c.notes, hint = hint }
+        local today = os.date("!%Y-%m-%d", os.time() + 8 * 3600)
+        return { today_min = c.today_date == today and c.today_min or nil, week_min = c.week_min, finished = Logic.count_finished(books), hint = hint }
     end
     local Pages = require("realweidu_pages")
     local page

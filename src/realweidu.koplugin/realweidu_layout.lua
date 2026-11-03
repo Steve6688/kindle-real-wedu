@@ -20,7 +20,7 @@ M.SPEC = {
     name_font    = 32,
     name_lines   = 2,
     line_factor  = 1.4,  -- line box per text line (TextBoxWidget adds ~30% leading)
-    row_gap      = 30,
+    row_gap      = 42,
     min_touch    = 120,  -- UI-SPEC says >=110; task asks >=120
 }
 

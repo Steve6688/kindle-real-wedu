@@ -327,9 +327,9 @@ function Me:build(g)
     -- 数据卡: 3 equal cells, 1px vertical separators, no fill
     local s = self.stats or {}
     local cells = {
+        { Logic.fmt_num(s.today_min), "今日阅读（分钟）" },
         { Logic.fmt_num(s.week_min), "本周阅读（分钟）" },
         { Logic.fmt_num(s.finished), "读完（本）" },
-        { Logic.fmt_num(s.notes),    "笔记（条）" },
     }
     local cw = math.floor((W - 2 * m) / 3)
     local card_h = math.max(U.px(180), 150)

@@ -61,16 +61,29 @@ function M.fetch_covers(client, books, dir)
     for _, b in ipairs(books) do
         local p = M.cover_path(dir, b.cover)
         if p and not exists(p) then
-            local url = b.cover:gsub("/s_", "/t6_")
-            pcall(function()
-                local data = client:get_binary(url)
-                if type(data) == "string" and #data > 100 then
-                    local f = io.open(p, "wb"); if f then f:write(data); f:close() end
-                end
-            end)
+            -- Some titles no longer serve the thumbnail variant. Try the large
+            -- cover first, then the URL returned by the API before giving up.
+            local urls = { b.cover:gsub("/s_", "/t6_") }
+            if urls[1] ~= b.cover then urls[#urls + 1] = b.cover end
+            for _, url in ipairs(urls) do
+                if exists(p) then break end
+                pcall(function()
+                    local data = client:get_binary(url)
+                    if type(data) == "string" and #data > 100 then
+                        local f = io.open(p, "wb"); if f then f:write(data); f:close() end
+                    end
+                end)
+            end
         end
         if p and exists(p) then b.cover_file = p end
     end
+end
+
+-- Called by the full-ranking page. Covers are fetched asynchronously by the
+-- caller, so a long list never blocks opening the page.
+function M.fetch_list_covers(client, i, dir)
+    local books = M.list(i)
+    if books then M.fetch_covers(client, books, dir) end
 end
 
 -- Load the current tab + the recommendation list (cached for the session).

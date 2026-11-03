@@ -223,6 +223,9 @@ function ShelfGrid:_buildGrid()
         cell.overlap_offset = { x, y }
         og[#og + 1] = cell
     end
+    -- Give the host a chance to populate missing local thumbnails for exactly
+    -- the books on this page. It runs after layout, so rendering is immediate.
+    if self.on_need_covers then self.on_need_covers(self, items) end
     return og
 end
 

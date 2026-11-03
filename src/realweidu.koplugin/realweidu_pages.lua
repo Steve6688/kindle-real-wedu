@@ -267,6 +267,7 @@ local RankList = Page:extend{
     name = "realweidu_ranklist",
     nav_active = "discover",
     title = nil, books = nil, on_book = nil, on_back = nil,
+    view = "list", grid_page = 1,
 }
 
 function RankList:build(g)
@@ -277,6 +278,42 @@ function RankList:build(g)
     self:hit(rect(0, y, W, U.px(100)), function() if self.on_back then self.on_back() end end)
     y = y + U.px(110)
     place(g, U.hline(W - 2 * m, 1), m, y - 1)
+    -- The compact text list remains the default; the adjacent switch gives the
+    -- same ranking a browseable cover wall without hiding the original view.
+    local label = self.view == "grid" and "列表" or "封面"
+    local sw = U.text(label, U.px(30), true)
+    place(g, sw, W - m - sw:getSize().w, U.px(42))
+    self:hit(rect(W - m - sw:getSize().w - U.px(30), y - U.px(110), sw:getSize().w + U.px(60), U.px(100)), function()
+        self.view = self.view == "grid" and "list" or "grid"
+        self.grid_page, self._row_offset = 1, 0
+        self:refresh()
+    end)
+    if self.view == "grid" then
+        local books = self.books or {}
+        if #books == 0 then place(g, U.text("暂无数据", U.px(30)), m, y + U.px(20)); return end
+        local cols, gap = 4, U.px(20)
+        local cw = math.floor((W - 2 * m - (cols - 1) * gap) / cols)
+        local ch = math.floor(cw * 1.42)
+        local name_px, name_h = U.px(26), U.px(68)
+        local per = cols
+        local first = (self.grid_page - 1) * per + 1
+        local last = math.min(#books, first + per - 1)
+        for n = first, last do
+            local b, col = books[n], n - first
+            local x = m + col * (cw + gap)
+            place(g, U.cover(b.cover_file, b.title, cw, ch, U.px(24)), x, y)
+            place(g, U.textbox(b.title, name_px, cw, name_h, true), x, y + ch + U.px(8))
+            self:hit(rect(x, y, cw, ch + name_h + U.px(8)), function() if self.on_book then self.on_book(b) end end)
+        end
+        local pages = math.max(1, math.ceil(#books / per))
+        if pages > 1 then
+            local nav_y = math.min(self.avail - Page.row_h(), y + ch + name_h + U.px(24))
+            self:nav_row(g, nav_y,
+                self.grid_page > 1 and function() self.grid_page = self.grid_page - 1; self:refresh() end or nil,
+                self.grid_page < pages and function() self.grid_page = self.grid_page + 1; self:refresh() end or nil)
+        end
+        return
+    end
     local rows = {}
     for i, b in ipairs(self.books or {}) do
         rows[i] = { text = i .. "  " .. (b.title or "") .. ((b.author or "") ~= "" and ("  ·  " .. b.author) or ""),

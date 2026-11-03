@@ -232,6 +232,12 @@ local close_pages, take_pages, ui_icons, call_weread -- defined further below
 function RealWeidu:init()
     plugin_dir = self.path or plugin_dir
     RealWeidu.attachWeread(self.ui)
+    -- User preference for Real微读: on sleep, KOReader renders the currently
+    -- open document's embedded cover. This is KOReader's native cover mode,
+    -- which also handles rotation and image fallback on Kindle hardware.
+    if rawget(_G, "G_reader_settings") then
+        G_reader_settings:saveSetting("screensaver_type", "cover")
+    end
     pin_menu_entry()
     if self.ui and self.ui.menu then
         self.ui.menu:registerToMainMenu(self)
@@ -937,7 +943,18 @@ function RealWeidu.showRanking(i)
         on_nav_me = function() RealWeidu.showMe() end,
     }
     RealWeidu._rank_page = page
-    return show_page(page, QA_DISCOVER, old_pages)
+    local r = show_page(page, QA_DISCOVER, old_pages)
+    -- The home page preloads only its five visible covers. Fill the rest of
+    -- this ranking in the background so the cover view is complete when used.
+    if weread.client and type(weread.runOnlineTask) == "function" then
+        local DataStorage = require("datastorage")
+        local dir = DataStorage:getDataDir() .. "/cache/realweidu_covers"
+        weread:runOnlineTask("加载榜单封面", function()
+            Rank.fetch_list_covers(weread.client, i, dir)
+            if RealWeidu._rank_page == page then page:refresh() end
+        end)
+    end
+    return r
 end
 
 -- 我: account name (weread settings "account", qr_login.lua:288-293), 本周阅读
@@ -1065,6 +1082,33 @@ function RealWeidu.showGrid()
     local old_pages = take_pages() -- 0.4.2: closed after the new page is up
     ui_icons() -- the grid's own bottom bar uses realweidu_ui icons
     local grid
+    local function fetch_missing_covers(target_grid, items)
+        if not (weread and weread.client and type(weread.runOnlineTask) == "function") then return end
+        local cache = type(weread.getShelfCoverCache) == "function" and weread:getShelfCoverCache() or nil
+        if not cache then return end
+        target_grid._cover_loading = target_grid._cover_loading or {}
+        local missing = {}
+        for _, book in ipairs(items or {}) do
+            local raw = book._raw
+            local url = type(raw) == "table" and raw.cover or nil
+            if type(url) == "string" and url ~= "" and not book.cover and not target_grid._cover_loading[book.bookId] then
+                target_grid._cover_loading[book.bookId] = true
+                missing[#missing + 1] = { item = book, raw = raw, url = url }
+            end
+        end
+        if #missing == 0 then return end
+        weread:runOnlineTask("加载书架封面", function()
+            local changed = false
+            for _, entry in ipairs(missing) do
+                local ok, data = pcall(weread.client.get_binary, weread.client, entry.url,
+                    { skip_cookie = true, persist_response_cookies = false, timeout = { 8, 12 } })
+                local path = ok and cache:store(entry.raw, data) or nil
+                if path then entry.item.cover = path; changed = true end
+                target_grid._cover_loading[entry.item.bookId] = nil
+            end
+            if changed and current_grid == target_grid then target_grid:refresh() end
+        end)
+    end
     grid = ShelfGrid:new{
         books = books,
         icons_dir = (plugin_dir or ".") .. "/icons",
@@ -1081,6 +1125,7 @@ function RealWeidu.showGrid()
         on_discover = function() RealWeidu.showDiscover() end,
         on_shelf = function() RealWeidu.showGrid() end,
         on_me = function() RealWeidu.showMe() end,
+        on_need_covers = fetch_missing_covers,
     }
     local orig_close = grid.onCloseWidget
     grid.onCloseWidget = function(self_w)

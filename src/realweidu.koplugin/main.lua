@@ -1084,6 +1084,14 @@ function RealWeidu.showGrid()
     local grid
     local function fetch_missing_covers(target_grid, items)
         if not (weread and weread.client and type(weread.runOnlineTask) == "function") then return end
+        -- Never start KOReader's online task while the device is offline: that
+        -- task deliberately shows a "no network connection" message. Existing
+        -- cached covers still render normally and will be completed next time
+        -- the shelf is opened with a connection.
+        if type(weread.isNetworkOnline) == "function" then
+            local ok, online = pcall(weread.isNetworkOnline, weread)
+            if not ok or not online then return end
+        end
         local cache = type(weread.getShelfCoverCache) == "function" and weread:getShelfCoverCache() or nil
         if not cache then return end
         target_grid._cover_loading = target_grid._cover_loading or {}

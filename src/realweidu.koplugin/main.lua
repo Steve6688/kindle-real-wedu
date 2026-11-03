@@ -559,7 +559,7 @@ function RealWeidu.confirmExitToKindle()
     })
 end
 
--- 「我」 rows, as in 0.3.3 (+ 返回 KOReader, which 0.3.5 added).
+-- 「我」 page shortcuts.
 function RealWeidu.meRows()
     return {
         { text = "阅读时长统计", fn = function() call_weread("showReadStats") end },   -- read_report.lua:238
@@ -567,8 +567,6 @@ function RealWeidu.meRows()
             info("weread 1.6.0 没有「全部笔记」列表接口。\n打开一本书后：阅读菜单「更多」→ 书签列表，"
                 .. "或 weread 菜单「划线和想法管理」查看该书笔记。") end },
         { text = "阅读设置", fn = function() RealWeidu.showSettingsDialog() end },
-        { text = "退出到 Kindle", fn = function() RealWeidu.confirmExitToKindle() end },
-        { text = "返回 KOReader", fn = function() RealWeidu.leaveToKOReader() end },
     }
 end
 

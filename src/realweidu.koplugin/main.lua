@@ -584,7 +584,7 @@ end
 -- 0.6.4 自动休眠 (screen off / sleep after inactivity): front-end for KOReader's
 -- own autosuspend plugin (same setting key; live instance re-armed, no KOReader edits).
 RealWeidu.SLEEP_KEY = "auto_suspend_timeout_seconds"
-RealWeidu.SLEEP_CHOICES = { 5 * 60, 10 * 60, 15 * 60, 30 * 60, 60 * 60, -1 }
+RealWeidu.SLEEP_CHOICES = { 60, 5 * 60, 10 * 60, 15 * 60, 30 * 60, 60 * 60, -1 }
 function RealWeidu.sleepLabel(sec)
     if not sec or sec <= 0 then return "从不" end
     if sec % 3600 == 0 then return math.floor(sec / 3600) .. " 小时" end

@@ -764,6 +764,7 @@ function RealWeidu.get_shelf(opts)
 end
 
 function RealWeidu.open_book(book_id)
+    mark_book_opened(book_id)
     return Data.open_book(Data.find_weread(), book_id)
 end
 
@@ -869,6 +870,17 @@ local function set_screensaver_cover(book)
 end
 RealWeidu._set_screensaver_cover = set_screensaver_cover
 
+local function mark_book_opened(book_id)
+    local id = tostring(book_id or "")
+    if id == "" or not G_reader_settings then return end
+    local times = G_reader_settings:readSetting("realweidu_last_open")
+    if type(times) ~= "table" then times = {} end
+    times[id] = os.time()
+    G_reader_settings:saveSetting("realweidu_last_open", times)
+    if G_reader_settings.flush then G_reader_settings:flush() end
+end
+RealWeidu._mark_book_opened = mark_book_opened
+
 -- 发现: search (weread showSearch, library.lua:1640), 最近阅读 from the local
 -- shelf cache, and the WeRead entries weread 1.6.0 really has. weread has no
 -- recommendation / ranking / category API (only /store/search, /shelf/sync,
@@ -912,6 +924,7 @@ function RealWeidu.showDiscover()
         on_reload = function() load(true) end,
         on_book = function(b)
             set_screensaver_cover(b)
+            mark_book_opened(b.bookId)
             local ok = Data.open_book(weread, b.bookId)
             if not ok and type(weread.showBookRecord) == "function" then
                 call_weread("showBookRecord", { book_id = b.bookId, bookId = b.bookId, title = b.title, author = b.author, cover = b.cover })
@@ -923,6 +936,7 @@ function RealWeidu.showDiscover()
         on_search = function() call_weread("showSearch") end,
         on_open = function(b)
             set_screensaver_cover(b)
+            mark_book_opened(b.bookId)
             local ok, e = Data.open_book(weread, b.bookId)
             if not ok then info(Data.MESSAGES[e] or ("打开失败：" .. tostring(e))) end
         end,
@@ -949,6 +963,7 @@ function RealWeidu.showRanking(i)
         on_back = function() RealWeidu.showDiscover() end,
         on_book = function(b)
             set_screensaver_cover(b)
+            mark_book_opened(b.bookId)
             local ok = Data.open_book(weread, b.bookId)
             if not ok then
                 call_weread("showBookRecord", { book_id = b.bookId, bookId = b.bookId, title = b.title, author = b.author, cover = b.cover })
@@ -1142,6 +1157,7 @@ function RealWeidu.showGrid()
         placeholder = books[1] and books[1].title or nil, -- UI-SPEC: 占位为书名推荐
         on_open = function(book)
             set_screensaver_cover(book)
+            mark_book_opened(book.bookId)
             local ok, e = Data.open_book(weread, book.bookId)
             if not ok then info(Data.MESSAGES[e] or ("打开失败：" .. tostring(e))) end
         end,

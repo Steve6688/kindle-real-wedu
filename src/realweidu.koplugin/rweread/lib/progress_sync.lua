@@ -454,7 +454,9 @@ function ProgressSync:_resolve(local_position, remote, context, options)
         return
     end
 
-    local ask = self:_config().ask_on_conflict ~= false
+    -- A manual sync must always let the reader choose the source, even when
+    -- automatic conflict prompts were disabled in WeRead settings.
+    local ask = options.manual == true or self:_config().ask_on_conflict ~= false
     if remote.conflict or ask then
         self.state = "awaiting_choice"
         local choice_generation = self.generation

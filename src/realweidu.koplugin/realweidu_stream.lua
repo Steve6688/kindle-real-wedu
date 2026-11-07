@@ -141,6 +141,7 @@ function M.shelf_label(book_id)
     if not st then return nil end
     local done, total = tonumber(st.done) or 0, tonumber(st.total) or 0
     local pct = total > 0 and math.floor(done * 100 / total + 0.5) or 0
+    if total > 0 and done >= total then return nil end
     if st.state ~= "paused" then
         return string.format("下载中 %d/%d（%d%%）", done, total, pct)
     end

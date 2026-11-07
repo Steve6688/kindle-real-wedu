@@ -139,11 +139,18 @@ local function progress_of(book, record)
     return math.max(0, math.min(100, p))
 end
 
+local function local_open_times()
+    local G = rawget(_G, "G_reader_settings")
+    local value = G and G:readSetting("realweidu_last_open")
+    return type(value) == "table" and value or {}
+end
+
 local function normalize(weread, book, saved)
     local id = book.bookId or book.book_id
     if id == nil then return nil end
     id = tostring(id)
     local record = saved[id]
+    local opened_at = tonumber(local_open_times()[id]) or 0
     return {
         bookId     = id,
         title      = type(book.title) == "string" and book.title or id,
@@ -152,7 +159,7 @@ local function normalize(weread, book, saved)
         progress   = progress_of(book, record),         -- 0..100 or nil
         finished   = tonumber(book.finishReading) == 1,
         downloaded = record_has_download(weread, record),
-        last_read  = tonumber(book.readUpdateTime) or 0, -- unix seconds, 0 = unknown
+        last_read  = math.max(tonumber(book.readUpdateTime) or 0, opened_at),
         is_mp      = id:match("^MP_WXS_") ~= nil,       -- 公众号 (library_db.lua:149)
         _raw       = book,
     }

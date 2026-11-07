@@ -1161,28 +1161,11 @@ function RM:syncProgress()
     local book_id
     pcall(function() book_id = weread:detectWeReadBook() end)
     if not book_id then return msg("当前书不是微信读书书籍，无法同步进度。") end
-    local local_pct
-    pcall(function()
-        local cur, total = ui:getCurrentPage(), ui.document:getPageCount()
-        if cur and total and total > 0 then local_pct = math.floor(cur * 1000 / total + 0.5) / 10 end
-    end)
-    local function confirm(remote_pct, err)
-        local ConfirmBox = require("ui/widget/confirmbox")
-        UIManager:show(ConfirmBox:new{
-            text = Logic.sync_progress_text(local_pct, remote_pct, err),
-            ok_text = "同步", cancel_text = "取消",
-            ok_callback = function()
-                local ok, e = pcall(weread.onWeReadSyncProgress, weread)
-                if not ok then msg("同步失败：" .. tostring(e)) end
-            end,
-        })
-    end
-    if not (weread.client and type(weread.runOnlineTask) == "function") then return confirm(nil, "weread 不可用") end
-    weread:runOnlineTask("读取微信读书进度", function()
-        local ok, r = pcall(weread.client.get_progress, weread.client, book_id)
-        local p = ok and type(r) == "table" and r.book and tonumber(r.book.progress) or nil
-        confirm(p, (not ok) and tostring(r) or nil)
-    end)
+    -- Use the embedded ProgressSync implementation for both cloud sources,
+    -- chapter offsets and full-book word coordinates. Comparing a raw page
+    -- count here with WeRead's percentage is what caused visible mismatches.
+    local ok, err = pcall(weread.onWeReadSyncProgress, weread)
+    if not ok then msg("同步失败：" .. tostring(err)) end
 end
 
 function RM:showMore()

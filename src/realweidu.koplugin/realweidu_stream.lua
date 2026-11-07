@@ -302,9 +302,29 @@ function M.build(job)
     end
     local book = {}
     for k, v in pairs(job.book) do book[k] = v end
+    -- Streamed books are packaged before the normal downloader reaches its
+    -- cover step. Fetch it once and pass it through the same EPUB packager so
+    -- KOReader's native cover screensaver can read the cover page.
+    local cover_data = job.cover_data
+    if not job.cover_attempted then
+        job.cover_attempted = true
+        local client = job.D and job.D.client
+        local url = book.cover
+        local okp, Protocol = pcall(require, "rweread.lib.protocol")
+        if okp and Protocol and Protocol.normalize_cover_url then
+            url = Protocol.normalize_cover_url(url)
+        end
+        if client and type(client.get_binary) == "function" and type(url) == "string" and url ~= "" then
+            local ok, data = pcall(client.get_binary, client, url, { skip_cookie = true, timeout = { 8, 15 } })
+            if ok and type(data) == "string" and #data > 100 then
+                cover_data = data
+                job.cover_data = data
+            end
+        end
+    end
     local t0 = now()
     local ok, path = pcall(Content.save_book_epub, job.D.settings, book, job.chapters, bodies,
-        "full", job.assets, job.css or "", nil)
+        "full", job.assets, job.css or "", cover_data)
     if not ok or type(path) ~= "string" then
         logi("realweidu stream: build failed", tostring(path))
         return nil, path
